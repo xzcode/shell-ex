@@ -128,9 +128,12 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
   });
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await expect(
-    page.locator(".host-item").filter({ hasText: "测试节点" }),
-  ).toBeVisible();
+  // Copy preserves the favorite flag, so the restored host appears in both sections.
+  const restoredHost = page
+    .locator(".host-item")
+    .filter({ hasText: "测试节点" });
+  await expect(restoredHost).toHaveCount(2);
+  await expect(restoredHost.first()).toBeVisible();
 
   await page.setViewportSize({ width: 1024, height: 768 });
   await expect(page.locator(".titlebar")).toBeVisible();
