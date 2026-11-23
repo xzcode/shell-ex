@@ -19,3 +19,5 @@ dist/
 
 *.tsbuildinfo
 /apps/desktop/src-tauri/gen/
+__pycache__/
+*.pyc

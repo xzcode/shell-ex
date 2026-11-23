@@ -36,7 +36,7 @@ python3 scripts/ssh_fixture.py cargo test -p shell-ex-core --test files_integrat
 | Linux `/proc` 资源采集 | 内存、运行时间有真实值；第二次采样得到 CPU 差值 |
 | PID 1 管理操作 | 返回 `PROTECTED_PROCESS` |
 
-Docker 容器与镜像查询、有限日志、启动/停止/重启已实现真实 SSH 命令调用；容器 ID 和操作名限制有单元测试。**本环境未运行 Docker 服务端实测，不能把参数测试记为容器生命周期验收。**
+Docker 容器与镜像查询、有限日志、启动/停止/重启已实现真实 SSH 命令调用；容器 ID 和操作名限制有单元测试。已补充只操作独立测试容器的 opt-in 实测，参见 [Docker 真实集成验收](DOCKER_EVIDENCE.md)。**本地开发容器没有 Docker 服务端，CI 实测须以对应运行日志为证，不能把参数测试或测试编译记为容器生命周期验收。**
 
 ## 已实现的安全与交互约束
 

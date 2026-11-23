@@ -28,17 +28,24 @@ def main():
             reservation.bind(("127.0.0.1", 0))
             port = reservation.getsockname()[1]
         user = getpass.getuser()
+        env = os.environ.copy()
+        elevated_sshd = env.get("SHELL_EX_TEST_SSHD_SUDO") == "1"
+        # GitHub's Linux runner has a locked password. OpenSSH rejects such an
+        # account before public-key authentication when UsePAM is disabled.
+        # PAM account/session handling permits the generated test key without
+        # unlocking the account or enabling password/interactive authentication.
+        use_pam = sys.platform.startswith("linux") and (os.geteuid() == 0 or elevated_sshd)
         config = root / "sshd_config"
         config.write_text(
             f"ListenAddress 127.0.0.1\nPort {port}\nHostKey {root}/host\n"
             f"PidFile {root}/sshd.pid\nAuthorizedKeysFile {root}/identity.pub\n"
-            "StrictModes no\nUsePAM no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n"
+            f"StrictModes no\nUsePAM {'yes' if use_pam else 'no'}\n"
+            "AuthenticationMethods publickey\nPubkeyAuthentication yes\n"
+            "PasswordAuthentication no\nKbdInteractiveAuthentication no\n"
             "PermitRootLogin prohibit-password\nAllowTcpForwarding yes\nGatewayPorts no\nSubsystem sftp internal-sftp\n"
         )
-        env = os.environ.copy()
         env.update(SHELL_EX_TEST_HOST="127.0.0.1", SHELL_EX_TEST_PORT=str(port), SHELL_EX_TEST_USER=user,
                    SHELL_EX_TEST_KEY=str(root / "identity"), SHELL_EX_TEST_ROOT=str(root))
-        elevated_sshd = env.get("SHELL_EX_TEST_SSHD_SUDO") == "1"
         if os.geteuid() == 0 or elevated_sshd:
             env["SHELL_EX_TEST_PTY"] = "1"
         else:

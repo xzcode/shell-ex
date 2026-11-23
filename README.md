@@ -55,7 +55,7 @@ rustup target add aarch64-apple-darwin
 npm run tauri -- build --target aarch64-apple-darwin --bundles app,dmg
 ```
 
-Windows 使用 `--bundles nsis`，Linux 使用 `--bundles deb`。GitHub 的 **Desktop packages** 工作流也会分别构建三个平台，并将安装包保存在该次运行的 Artifacts 中。当前 macOS 默认采用 ad-hoc 签名；开发者身份证书、公证与 Windows 代码签名是单独的正式分发条件，详见 [发行说明](docs/RELEASE.md)。
+Windows 使用 `--bundles nsis`，Linux 使用 `--bundles deb`。GitHub 的 **Desktop packages** 工作流会分别构建三个平台，将安装包、SHA-256 校验文件与构建来源保存在仓库 **Releases** 中的 `build-提交前12位` 草稿；工作流摘要提供入口。当前 macOS 默认采用 ad-hoc 签名；开发者身份证书、公证与 Windows 代码签名是单独的正式分发条件，详见 [发行说明](docs/RELEASE.md)。
 
 ## 必要验证
 

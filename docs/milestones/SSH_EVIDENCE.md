@@ -86,6 +86,8 @@ SHELL_EX_TEST_SSHD_SUDO=1 python3 scripts/ssh_fixture.py \
 
 `SHELL_EX_TEST_SSHD_SUDO=1` 仅使隔离夹具的 OpenSSH 通过 `sudo -n` 启动，测试命令保持当前用户执行。成功进入该模式后夹具启用真实 PTY 分支；SSH Agent 在能启动私人测试套接字的环境中启用。只有取得 CI 的实际成功记录后，才能将这两项记为通过。
 
+首轮 [Verify CI（45163807792）](https://github.com/xzcode/shell-ex/actions/runs/45163807792) 的 20 项核心单元测试和 1 项认证协议测试通过；OpenSSH 集成测试在登录阶段失败，服务端诊断为 `User runner not allowed because account is locked`。该问题来自 GitHub Linux runner 的锁定密码与夹具 `UsePAM no` 的组合。夹具已调整为仅在 Linux 的 root/sudo 模式启用 PAM 账户与会话处理，继续强制 `AuthenticationMethods publickey`，并关闭密码与交互式认证；不解锁或改动 runner 的系统账户。非特权本地模式继续禁用 PAM。此修复的提权分支须由后续 CI 的实际结果确认。
+
 macOS 原生 Keychain、Windows OpenSSH Agent、真实服务器上的全屏交互程序、休眠唤醒后的网络恢复仍需要对应平台的验证。Mac 安装包签名与公证属于发布验证，不由上述核心测试替代。
 
 ## OpenSSH 配置导入的修复与边界

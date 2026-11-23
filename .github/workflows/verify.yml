@@ -2,6 +2,7 @@ name: Verify
 on:
   push:
     branches: [master, 'codex/**']
+    paths-ignore: ['docs/**', '**.md', 'LICENSE']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -10,16 +11,11 @@ concurrency:
   group: verify-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  core-and-ui:
+  core:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: apps/desktop/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -30,11 +26,28 @@ jobs:
         run: cargo fmt --all --check
       - name: Core safety and behavior tests
         run: cargo test --locked -p shell-ex-core --lib --test auth_protocol
-      - name: OpenSSH integration
+      - name: Prepare Docker integration image
+        run: docker pull busybox:1.37.0
+      - name: OpenSSH, SFTP and Docker integration
         env:
           SHELL_EX_TEST_SSHD_SUDO: '1'
           SHELL_EX_TEST_PTY: '1'
-        run: python3 scripts/ssh_fixture.py cargo test --locked -p shell-ex-core --test ssh_integration --test files_integration -- --ignored --test-threads=1
+          SHELL_EX_TEST_DOCKER: '1'
+        run: python3 scripts/ssh_fixture.py cargo test --locked -p shell-ex-core --test ssh_integration --test files_integration --test docker_integration -- --ignored --test-threads=1 --nocapture
+  ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
       - name: Install UI dependencies
         working-directory: apps/desktop
         run: npm ci
@@ -48,13 +61,11 @@ jobs:
       - name: Workbench interactions and visual captures
         working-directory: apps/desktop
         run: npm run test:ui
-      - name: UI screenshots and report
+      - name: Record fixture screenshots in job evidence
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Shell-EX-UI-verification-${{ github.sha }}
-          path: |
-            apps/desktop/test-results/
-            apps/desktop/playwright-report/
-          if-no-files-found: ignore
-          retention-days: 30
+        run: python3 scripts/publish_build.py screenshots
+      - name: Save UI report to build draft
+        if: always() && github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/publish_build.py ui

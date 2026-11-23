@@ -6,13 +6,15 @@
 
 | 目标 | Runner | 产物 |
 | --- | --- | --- |
-| Apple Silicon | macos-15 / aarch64-apple-darwin | `.app` 构建，`.dmg` 作为 artifact |
+| Apple Silicon | macos-15 / aarch64-apple-darwin | `.app` 构建，分发 `.dmg` |
 | Windows x64 | windows-latest / x86_64-pc-windows-msvc | NSIS `.exe` |
 | Linux x64 | ubuntu-24.04 / x86_64-unknown-linux-gnu | `.deb` |
 
-在 GitHub → Actions → Desktop packages → 对应运行 → Artifacts 下载。私有仓库需要有访问权限。Artifacts 保存 30 天，版本源码和锁文件继续保留；要长期保留发行包可在确认后附到私有 Release。
+在 GitHub → Actions → Desktop packages → 对应运行摘要的 **Download build draft** 下载，或进入仓库 Releases 找到 `build-提交前12位` 草稿。每个平台同时提供 SHA-256 校验文件、来源提交和工作流记录。草稿保持未发布状态，需要仓库相应权限才能访问。
 
-构建不会自动公开仓库、对外发布网站或上传主机配置。`verify.yml` 运行核心风险测试、回环 OpenSSH 与 Playwright 交互/截图检查。
+2026-11-23 首轮 macOS 原生构建和 DMG 已成功生成，但账户 Actions artifact 存储配额耗尽，阻止附件上传。发行流程因此采用 GitHub Release 资产存储；不删除其他项目产物、不调整账户付费设置。不同平台独立构建并添加到同一来源提交的草稿，故下载前需确认所选平台任务已成功。文件名包含运行编号及重试序号，重复运行保留既有文件，不替换安装包或修改已发布发行版。
+
+`verify.yml` 独立运行核心风险/回环 OpenSSH 测试与 Playwright 交互/截图检查。master 的界面报告也存入对应构建草稿，测试截图来自专用 TEST-NET 虚构主机。PR 不上传发行资产。构建不会公开仓库或上传用户主机配置。
 
 ## 本机安装
 
