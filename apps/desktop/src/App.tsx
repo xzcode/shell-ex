@@ -83,6 +83,7 @@ const labels: Record<string, string> = {
   authenticating: "认证中",
   disconnected: "连接中断",
   closed: "已关闭",
+  closing: "正在关闭",
   error: "连接失败",
   failed: "连接失败",
   reconnecting: "重连中",
@@ -124,6 +125,7 @@ export default function App() {
   const [bootError, setBootError] = useState("");
   const [help, setHelp] = useState(false);
   const connectionLock = useRef(false);
+  const closingSessions = useRef(new Set<string>());
   const activeRef = useRef(activeId);
   activeRef.current = activeId;
   const sessionRef = useRef(sessions);
@@ -211,10 +213,45 @@ export default function App() {
       statusRef.current.set(event.sessionId, { status, error });
       setSessions((list) =>
         list.map((s) =>
-          s.id === event.sessionId ? { ...s, status, error } : s,
+          s.id === event.sessionId
+            ? {
+                ...s,
+                status: s.terminalFailure ? "error" : status,
+                error: s.terminalFailure || error,
+              }
+            : s,
         ),
       );
     }
+  }
+  function terminalTransportFailure(sessionId: string, message: string) {
+    const session = sessionRef.current.find((s) => s.id === sessionId);
+    if (
+      !session ||
+      closingSessions.current.has(sessionId) ||
+      ["closed", "disconnected", "failed", "error"].includes(session.status)
+    )
+      return;
+    notify(`${session.name}：${message}。正在关闭会话，请重新连接。`, "error");
+    setSessions((list) =>
+      list.map((s) =>
+        s.id === sessionId
+          ? { ...s, status: "error", error: message, terminalFailure: message }
+          : s,
+      ),
+    );
+    closingSessions.current.add(sessionId);
+    void api("session_close", { sessionId, local: session.local })
+      .catch((error) => {
+        notify(
+          `关闭 ${session.name} 未完成：${errorText(error)}。请关闭该会话或退出应用。`,
+          "error",
+        );
+      })
+      .finally(() => {
+        closingSessions.current.delete(sessionId);
+        setSessions((list) => [...list]);
+      });
   }
   async function connectHost(host: Host, automatic = false): Promise<boolean> {
     let secret: SecretInput | null = null;
@@ -385,16 +422,35 @@ export default function App() {
       ))
     )
       return;
+    closingSessions.current.add(session.id);
+    const reconnectTimer = timers.current.get(session.id);
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    timers.current.delete(session.id);
+    reconnecting.current.delete(session.id);
+    setSessions((list) =>
+      list.map((s) => (s.id === session.id ? { ...s, status: "closing" } : s)),
+    );
     try {
       await api("session_close", {
         sessionId: session.id,
         local: session.local,
       });
     } catch (e) {
-      if (session.status === "connected") {
-        notify(errorText(e), "error");
-        return;
-      }
+      notify(errorText(e), "error");
+      setSessions((list) =>
+        list.map((s) =>
+          s.id === session.id
+            ? {
+                ...s,
+                status: "error",
+                error: `关闭会话未完成：${errorText(e)}`,
+              }
+            : s,
+        ),
+      );
+      return;
+    } finally {
+      closingSessions.current.delete(session.id);
     }
     forgetTerminal(session.id);
     setSessions((s) => s.filter((item) => item.id !== session.id));
@@ -413,6 +469,7 @@ export default function App() {
         s.local ||
         !s.hostId ||
         !["disconnected", "closed", "error", "failed"].includes(s.status) ||
+        closingSessions.current.has(s.id) ||
         reconnecting.current.has(s.id)
       )
         continue;
@@ -420,10 +477,20 @@ export default function App() {
       if (!host) continue;
       reconnecting.current.add(s.id);
       const attempt = async (count: number) => {
-        if (!sessionRef.current.some((x) => x.id === s.id) || hasDirtyDrafts())
+        if (
+          !sessionRef.current.some((x) => x.id === s.id) ||
+          closingSessions.current.has(s.id) ||
+          hasDirtyDrafts()
+        )
           return;
         const timer = setTimeout(async () => {
           timers.current.delete(s.id);
+          if (
+            !sessionRef.current.some((x) => x.id === s.id) ||
+            closingSessions.current.has(s.id) ||
+            hasDirtyDrafts()
+          )
+            return;
           const ok = await connectHost(host, true);
           if (ok) {
             void api("session_close", { sessionId: s.id, local: false }).catch(
@@ -488,6 +555,13 @@ export default function App() {
               "退出 Shell EX",
             )
           ) {
+            for (const session of sessionRef.current)
+              closingSessions.current.add(session.id);
+            for (const timer of timers.current.values()) clearTimeout(timer);
+            timers.current.clear();
+            setSessions((list) =>
+              list.map((session) => ({ ...session, status: "closing" })),
+            );
             await Promise.allSettled(
               sessionRef.current.map((s) =>
                 api("session_close", { sessionId: s.id, local: s.local }),
@@ -973,6 +1047,7 @@ export default function App() {
                           (splitEnabled && s.id === secondary?.id)
                         }
                         notify={notify}
+                        onTransportFailure={terminalTransportFailure}
                       />
                       {s.status !== "connected" && (
                         <div className="disconnected-banner">

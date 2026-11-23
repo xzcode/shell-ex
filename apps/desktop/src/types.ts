@@ -47,6 +47,7 @@ export type Session = {
   local: boolean;
   status: string;
   error?: string;
+  terminalFailure?: string;
   connectedAt: number;
 };
 export type FileEntry = {

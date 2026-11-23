@@ -8,6 +8,7 @@ import type { TerminalEvent, AppSettings, Session, Notify } from "./types";
 import { api, confirmAction, errorText } from "./api";
 import { IconButton } from "./ui";
 import { sendTerminalInput } from "./terminalInput";
+import { TerminalAckController } from "./terminalAck";
 const pending = new Map<string, TerminalEvent[]>();
 const sinks = new Map<string, (event: TerminalEvent) => void>();
 export function receiveTerminalEvent(event: TerminalEvent) {
@@ -58,18 +59,31 @@ export function TerminalView({
   settings,
   visible,
   notify,
+  onTransportFailure,
 }: {
   session: Session;
   settings: AppSettings;
   visible: boolean;
   notify: Notify;
+  onTransportFailure: (sessionId: string, message: string) => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const term = useRef<Terminal | null>(null);
   const fit = useRef<FitAddon | null>(null);
   const search = useRef<SearchAddon | null>(null);
-  const current = useRef({ settings, notify });
-  current.current = { settings, notify };
+  const ackController = useRef<TerminalAckController | null>(null);
+  const current = useRef({
+    settings,
+    notify,
+    onTransportFailure,
+    status: session.status,
+  });
+  current.current = {
+    settings,
+    notify,
+    onTransportFailure,
+    status: session.status,
+  };
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   const input = useRef<HTMLInputElement>(null);
@@ -115,24 +129,45 @@ export function TerminalView({
     const observer = new ResizeObserver(resize);
     observer.observe(container.current);
     resize();
+    const acknowledgements = new TerminalAckController({
+      send: (sequence) =>
+        api<void>("terminal_ack", {
+          sessionId: session.id,
+          sequence,
+          local: session.local,
+        }),
+      onFailure: ({ cause }) => {
+        if (
+          disposed ||
+          ["closing", "closed", "failed", "disconnected", "error"].includes(
+            current.current.status,
+          )
+        )
+          return;
+        t.options.disableStdin = true;
+        const detail = `终端输出确认失败：${errorText(cause)}`;
+        t.write(
+          `\r\n\x1b[31m[${detail.replace(/[\x00-\x1f\x7f]/g, " ")}。会话将关闭，请重新连接。]\x1b[0m\r\n`,
+        );
+        current.current.onTransportFailure(session.id, detail);
+      },
+    });
+    ackController.current = acknowledgements;
     const consume = (event: TerminalEvent) => {
       if (disposed) return;
       if (
         event.type === "exit" ||
         (event.type === "state" &&
           ["closed", "failed", "disconnected", "error"].includes(event.state))
-      )
+      ) {
         t.options.disableStdin = true;
+        acknowledgements.dispose();
+      }
       if (event.type === "data") {
         const raw = atob(event.data);
         const bytes = Uint8Array.from(raw, (c) => c.charCodeAt(0));
         t.write(bytes, () => {
-          if (!disposed)
-            void api("terminal_ack", {
-              sessionId: session.id,
-              sequence: event.sequence,
-              local: session.local,
-            }).catch(() => {});
+          if (!disposed) acknowledgements.acknowledge(event.sequence);
         });
       } else if (event.type === "exit") {
         t.write(
@@ -193,6 +228,8 @@ export function TerminalView({
     const osc = t.parser.registerOscHandler(52, () => true);
     return () => {
       disposed = true;
+      acknowledgements.dispose();
+      ackController.current = null;
       observer.disconnect();
       element.removeEventListener("paste", paste, true);
       data.dispose();
@@ -204,6 +241,16 @@ export function TerminalView({
     // Session identity is immutable; changing preferences is applied without clearing the buffer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id]);
+  useEffect(() => {
+    if (
+      ["closing", "closed", "failed", "disconnected", "error"].includes(
+        session.status,
+      )
+    ) {
+      if (term.current) term.current.options.disableStdin = true;
+      ackController.current?.dispose();
+    }
+  }, [session.status]);
   useEffect(() => {
     if (term.current) {
       term.current.options.fontSize = settings.fontSize;

@@ -17,7 +17,10 @@ use shell_ex_core::{
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, Weak,
+    },
     time::Duration,
 };
 use tauri::{ipc::Channel, Manager, State};
@@ -29,10 +32,10 @@ struct AppState {
     ssh: Arc<SshManager>,
     pty: Arc<PtyManager>,
     files: FileService,
-    transfers: TransferManager,
-    monitor: MonitorService,
+    transfers: Arc<TransferManager>,
+    monitor: Arc<MonitorService>,
     docker: DockerService,
-    tunnels: TunnelManager,
+    tunnels: Arc<TunnelManager>,
     probes: Mutex<HashMap<String, (String, u16, HostKeyInfo)>>,
     mutation: Arc<Mutex<()>>,
 }
@@ -41,14 +44,14 @@ impl AppState {
         let store = Arc::new(Storage::open(&path.join("shell-ex.sqlite3"))?);
         let ssh = Arc::new(SshManager::new());
         Ok(Self {
-            transfers: TransferManager::new(
+            transfers: Arc::new(TransferManager::new(
                 ssh.clone(),
                 store.settings()?.transfer_concurrency as usize,
-            ),
+            )),
             files: FileService::new(ssh.clone()),
-            monitor: MonitorService::new(ssh.clone()),
+            monitor: Arc::new(MonitorService::new(ssh.clone())),
             docker: DockerService::new(ssh.clone()),
-            tunnels: TunnelManager::new(ssh.clone()),
+            tunnels: Arc::new(TunnelManager::new(ssh.clone())),
             store,
             vault: Arc::new(SystemVault),
             ssh,
@@ -75,14 +78,218 @@ impl AppState {
             None => self.ssh.probe(host).await,
         }
     }
+    fn session_owner(&self, local: bool) -> SessionOwner {
+        if local {
+            SessionOwner::Local(Arc::downgrade(&self.pty))
+        } else {
+            SessionOwner::Ssh {
+                ssh: Arc::downgrade(&self.ssh),
+                transfers: Arc::downgrade(&self.transfers),
+                monitor: Arc::downgrade(&self.monitor),
+                tunnels: Arc::downgrade(&self.tunnels),
+            }
+        }
+    }
 }
-fn sink(channel: Channel<TerminalEvent>) -> EventSink {
+
+// A stream callback must not keep the owning managers alive through its session.
+#[derive(Clone)]
+enum SessionOwner {
+    Local(Weak<PtyManager>),
+    Ssh {
+        ssh: Weak<SshManager>,
+        transfers: Weak<TransferManager>,
+        monitor: Weak<MonitorService>,
+        tunnels: Weak<TunnelManager>,
+    },
+}
+impl SessionOwner {
+    async fn close(&self, session_id: String) -> Result<()> {
+        match self {
+            Self::Local(manager) => {
+                if let Some(manager) = manager.upgrade() {
+                    tokio::task::spawn_blocking(move || manager.close(&session_id))
+                        .await
+                        .map_err(join_error)??;
+                }
+            }
+            Self::Ssh {
+                ssh,
+                transfers,
+                monitor,
+                tunnels,
+            } => {
+                if let Some(transfers) = transfers.upgrade() {
+                    transfers.cancel_session(&session_id).await;
+                }
+                if let Some(monitor) = monitor.upgrade() {
+                    monitor.forget_session(&session_id).await;
+                }
+                if let Some(tunnels) = tunnels.upgrade() {
+                    tunnels.stop_session(&session_id).await;
+                }
+                if let Some(ssh) = ssh.upgrade() {
+                    ssh.disconnect(&session_id).await?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn sink(channel: Channel<TerminalEvent>, owner: SessionOwner) -> EventSink {
+    let auth_owner = owner.clone();
+    guarded_sink(
+        channel,
+        move |session_id| {
+            let owner = owner.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = owner.close(session_id).await;
+            });
+        },
+        move |request_id| {
+            if let SessionOwner::Ssh { ssh, .. } = &auth_owner {
+                if let Some(ssh) = ssh.upgrade() {
+                    tauri::async_runtime::spawn(async move {
+                        // An undeliverable challenge cannot receive an answer.
+                        let _ = ssh.auth_respond(&request_id, Vec::new()).await;
+                    });
+                }
+            }
+        },
+    )
+}
+
+fn guarded_sink(
+    channel: Channel<TerminalEvent>,
+    close: impl Fn(String) + Send + Sync + 'static,
+    cancel_auth: impl Fn(String) + Send + Sync + 'static,
+) -> EventSink {
+    let failed = AtomicBool::new(false);
+    let cleanup_started = AtomicBool::new(false);
     Arc::new(move |event| {
-        let _ = channel.send(event);
+        let registered_session = match &event {
+            TerminalEvent::Data { session_id, .. } | TerminalEvent::Exit { session_id, .. } => {
+                Some(session_id.clone())
+            }
+            TerminalEvent::State {
+                session_id, state, ..
+            } if matches!(state.as_str(), "connected" | "disconnected") => Some(session_id.clone()),
+            _ => None,
+        };
+        let auth_request = match &event {
+            TerminalEvent::Auth { request_id, .. } => Some(request_id.clone()),
+            _ => None,
+        };
+        if !failed.load(Ordering::Acquire) && channel.send(event).is_ok() {
+            return;
+        }
+        failed.store(true, Ordering::Release);
+        if let Some(request_id) = auth_request {
+            cancel_auth(request_id);
+        }
+        // SSH emits connecting/auth events before registration. Do not consume
+        // the one-shot cleanup until a registered session can actually close.
+        // Both managers insert before connected/data emission, and cleanup's
+        // exit events re-enter this sink without scheduling another close.
+        if let Some(session_id) = registered_session {
+            if !cleanup_started.swap(true, Ordering::AcqRel) {
+                close(session_id);
+            }
+        }
     })
 }
 fn join_error(e: tokio::task::JoinError) -> AppError {
     AppError::new("TASK_FAILED", e.to_string())
+}
+
+#[cfg(test)]
+mod terminal_delivery_tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+
+    fn state_event(state: &str) -> TerminalEvent {
+        TerminalEvent::State {
+            session_id: "owning-session".into(),
+            state: state.into(),
+            message: None,
+        }
+    }
+
+    #[test]
+    fn early_delivery_failure_cancels_auth_and_closes_after_registration_once() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let delivered = attempts.clone();
+        let closed = Arc::new(Mutex::new(Vec::new()));
+        let close_events = closed.clone();
+        let cancelled = Arc::new(Mutex::new(Vec::new()));
+        let auth_events = cancelled.clone();
+        let events = guarded_sink(
+            Channel::new(move |_| {
+                delivered.fetch_add(1, Ordering::SeqCst);
+                Err(tauri::Error::FailedToReceiveMessage)
+            }),
+            move |id| close_events.lock().unwrap().push(id),
+            move |request| auth_events.lock().unwrap().push(request),
+        );
+        events(state_event("connecting"));
+        events(TerminalEvent::Auth {
+            session_id: "owning-session".into(),
+            request_id: "undeliverable-challenge".into(),
+            name: String::new(),
+            instructions: String::new(),
+            prompts: vec![AuthPrompt {
+                prompt: "One-time code".into(),
+                echo: false,
+            }],
+        });
+        assert!(closed.lock().unwrap().is_empty());
+        assert_eq!(*cancelled.lock().unwrap(), vec!["undeliverable-challenge"]);
+
+        events(state_event("connected"));
+        for sequence in 1..=64 {
+            events(TerminalEvent::Data {
+                session_id: "owning-session".into(),
+                data: "YQ==".into(),
+                sequence,
+            });
+        }
+        events(TerminalEvent::Exit {
+            session_id: "owning-session".into(),
+            code: None,
+        });
+        events(state_event("disconnected"));
+        assert_eq!(*closed.lock().unwrap(), vec!["owning-session"]);
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn failed_native_channel_closes_only_its_registered_local_pty() {
+        let manager = Arc::new(PtyManager::new());
+        let cwd = Some(std::env::temp_dir().to_string_lossy().into_owned());
+        let other = manager.open(cwd.clone(), 80, 24, Arc::new(|_| {})).unwrap();
+        let failed = manager
+            .open(
+                cwd,
+                80,
+                24,
+                sink(
+                    Channel::new(|_| Err(tauri::Error::FailedToReceiveMessage)),
+                    SessionOwner::Local(Arc::downgrade(&manager)),
+                ),
+            )
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while manager.resize(&failed, 81, 25).is_ok() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        manager.resize(&other, 82, 26).unwrap();
+        manager.close(&other).unwrap();
+    }
 }
 
 #[tauri::command]
@@ -266,7 +473,7 @@ async fn ssh_connect(
     } else {
         SecretInput::default()
     };
-    let event_sink = sink(on_event);
+    let event_sink = sink(on_event, state.session_owner(false));
     match state.jump_session(&host).await? {
         Some(jump) => {
             state
@@ -300,7 +507,8 @@ async fn local_open(
 ) -> Result<String> {
     validate_size(cols as u32, rows as u32)?;
     let manager = state.pty.clone();
-    tokio::task::spawn_blocking(move || manager.open(cwd, cols, rows, sink(on_event)))
+    let event_sink = sink(on_event, state.session_owner(true));
+    tokio::task::spawn_blocking(move || manager.open(cwd, cols, rows, event_sink))
         .await
         .map_err(join_error)?
 }
@@ -365,17 +573,7 @@ async fn terminal_ack(
 }
 #[tauri::command]
 async fn session_close(state: State<'_, AppState>, session_id: String, local: bool) -> Result<()> {
-    if local {
-        let manager = state.pty.clone();
-        tokio::task::spawn_blocking(move || manager.close(&session_id))
-            .await
-            .map_err(join_error)?
-    } else {
-        state.transfers.cancel_session(&session_id).await;
-        state.monitor.forget_session(&session_id).await;
-        state.tunnels.stop_session(&session_id).await;
-        state.ssh.disconnect(&session_id).await
-    }
+    state.session_owner(local).close(session_id).await
 }
 #[tauri::command]
 async fn sftp_realpath(
