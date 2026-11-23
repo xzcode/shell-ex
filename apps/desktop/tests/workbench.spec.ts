@@ -9,6 +9,9 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
   await expect(page.getByText("界面预览", { exact: true })).toBeVisible();
   await expect(page.getByText("从一台服务器开始。")).toBeVisible();
   await expect(page.getByText("0 个连接", { exact: true })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "graphite");
+  await expect(page.locator(".header-center")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /快速查找主机和操作/ })).toBeVisible();
   await page.screenshot({
     path: info.outputPath("workbench-dark-empty.png"),
     fullPage: true,
@@ -34,6 +37,11 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
     .getByRole("button", { name: "身份认证", exact: true })
     .click();
   await hostDialog.getByLabel(/登录密码/).fill("PREVIEW-SECRET-DO-NOT-PERSIST");
+  await hostDialog.getByRole("button", { name: "网络", exact: true }).click();
+  const selectHeight = await hostDialog.getByLabel("代理类型").evaluate((element) => element.getBoundingClientRect().height);
+  const inputHeight = await hostDialog.getByLabel("连接超时（秒）").evaluate((element) => element.getBoundingClientRect().height);
+  expect(Math.abs(selectHeight - inputHeight)).toBeLessThanOrEqual(1);
+  await hostDialog.getByRole("button", { name: "身份认证", exact: true }).click();
   await hostDialog.getByRole("switch", { name: /保存到系统凭据库/ }).check();
   await expect(
     hostDialog.getByRole("button", { name: "保存并测试握手" }),
@@ -112,6 +120,18 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
     page.getByRole("button", { name: "新建转发", exact: true }),
   ).toBeDisabled();
   await page.getByRole("button", { name: "文件", exact: true }).click();
+  const geometry = await page.evaluate(() => {
+    const upper = document.querySelector(".workspace-main")!.getBoundingClientRect();
+    const files = document.querySelector(".bottom-panel")!.getBoundingClientRect();
+    const monitor = document.querySelector(".monitor-panel")!.getBoundingClientRect();
+    const terminal = document.querySelector(".terminal-column")!.getBoundingClientRect();
+    return {
+      dockedBelow: files.top >= upper.bottom - 2,
+      fullWidth: Math.abs(files.width - upper.width) < 2,
+      monitorBesideTerminal: monitor.left >= terminal.right - 2,
+    };
+  });
+  expect(geometry).toEqual({ dockedBelow: true, fullWidth: true, monitorBesideTerminal: true });
   await page.screenshot({
     path: info.outputPath("workbench-dark.png"),
     fullPage: true,
@@ -119,15 +139,21 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
 
   await page.getByRole("button", { name: "设置 ⌘,", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "设置", exact: true });
-  await settings.getByRole("button", { name: "清晨浅色", exact: true }).click();
+  await settings.getByRole("button", { name: /雾光浅色/ }).click();
   await settings.getByRole("button", { name: "保存设置", exact: true }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "mist");
   await page.screenshot({
     path: info.outputPath("workbench-light.png"),
     fullPage: true,
   });
+  await page.getByRole("button", { name: "设置 ⌘,", exact: true }).click();
+  await page.getByRole("dialog", { name: "设置", exact: true })
+    .getByRole("button", { name: /极光深色/ }).click();
+  await page.getByRole("button", { name: "保存设置", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "aurora");
+  await page.screenshot({ path: info.outputPath("workbench-aurora.png"), fullPage: true });
   await page.reload();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "aurora");
   // Copy preserves the favorite flag, so the restored host appears in both sections.
   const restoredHost = page
     .locator(".host-item")
