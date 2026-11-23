@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Folder, AlertCircle } from "lucide-react";
 import type { FileEntry } from "./types";
 import { api, errorText } from "./api";
@@ -61,13 +61,13 @@ export function DirectoryTree({
     }
   }
 
-  function renderChildren(parent: string, depth: number): React.ReactNode {
+  function renderChildren(parent: string, depth: number): ReactNode {
     if (!expanded.has(parent) || depth > 20) return null;
     const children = nodes[parent];
     if (!children) return errors[parent] ? (
       <div className="folder-tree-error" title={errors[parent]}>
         <AlertCircle size={12} /> 无法读取此目录
-        <button onClick={() => { delete errors[parent]; void loadDir(parent); }}>重试</button>
+        <button onClick={() => { void loadDir(parent); }}>重试</button>
       </div>
     ) : <div className="folder-tree-loading">读取中…</div>;
     return children.map((item) => (

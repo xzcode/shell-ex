@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Activity, Cpu, MemoryStick, HardDrive, ArrowDown, ArrowUp,
   Clock3, Pause, Play, X, RefreshCw, Server, Network,
@@ -17,7 +17,7 @@ function duration(seconds: number): string {
   return d + "天 " + h + "时 " + m + "分";
 }
 function MetricCard({ icon, label, percent, detail, status = "normal" }: {
-  icon: React.ReactNode; label: string; percent: number | null;
+  icon: ReactNode; label: string; percent: number | null;
   detail: string; status?: "normal" | "warn" | "danger";
 }) {
   return (
