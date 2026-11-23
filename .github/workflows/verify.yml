@@ -54,7 +54,9 @@ jobs:
       - name: Build UI
         working-directory: apps/desktop
         run: npm run build
-
+      - name: Install Chinese fonts for visual verification
+        timeout-minutes: 3
+        run: sudo apt-get install -y --no-install-recommends fonts-noto-cjk
       - name: Check runner Chrome for UI verification
         run: google-chrome --version
       - name: Workbench interactions and visual captures

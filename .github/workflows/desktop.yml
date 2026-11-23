@@ -56,6 +56,13 @@ jobs:
       - name: Build desktop installer
         working-directory: apps/desktop
         run: npm run tauri -- build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Record Linux installer dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          for package in target/${{ matrix.target }}/release/bundle/deb/*.deb; do
+            dpkg-deb --field "$package" Package Version Architecture Depends
+          done
       - name: Save installers and checksums to build draft
         env:
           GH_TOKEN: ${{ github.token }}
