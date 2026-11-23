@@ -89,15 +89,21 @@ export type ProcessInfo = {
 export type MonitorSnapshot = {
   hostname: string;
   os: string;
+  kernel?: string;
+  cpuCores?: number;
   uptime: number;
   load: [number, number, number];
   cpuPercent: number | null;
   memoryTotal: number;
   memoryUsed: number;
+  swapTotal?: number;
+  swapUsed?: number;
   diskTotal: number;
   diskUsed: number;
   networkRx: number;
   networkTx: number;
+  networkInterfaces?: { name: string; rx: number; tx: number }[];
+  diskMounts?: { path: string; total: number; used: number; available: number }[];
   processes: ProcessInfo[];
 };
 export type DockerContainer = {
