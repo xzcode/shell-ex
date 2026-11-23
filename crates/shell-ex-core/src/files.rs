@@ -29,6 +29,8 @@ pub struct FileEntry {
     pub size: u64,
     pub modified: Option<u32>,
     pub permissions: Option<u32>,
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
 }
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -92,6 +94,8 @@ impl FileService {
                 size: attrs.size.unwrap_or(0),
                 modified: attrs.mtime,
                 permissions: attrs.permissions,
+                uid: attrs.uid,
+                gid: attrs.gid,
             });
         }
         result.sort_by(|a, b| {

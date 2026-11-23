@@ -367,7 +367,7 @@ pub fn validate_host(h: &Host) -> Result<()> {
     Ok(())
 }
 pub fn validate_settings(s: &AppSettings) -> Result<()> {
-    if !["dark", "light"].contains(&s.theme.as_str())
+    if !["dark", "light", "graphite", "mist", "aurora"].contains(&s.theme.as_str())
         || !(9..=30).contains(&s.font_size)
         || s.font_family.len() > 300
         || !(100..=100000).contains(&s.scrollback)

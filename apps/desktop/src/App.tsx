@@ -166,7 +166,7 @@ export default function App() {
           ...defaultWorkspace,
           ...w,
           sidebarWidth: Math.min(360, Math.max(196, w.sidebarWidth || 236)),
-          filesHeight: Math.min(480, Math.max(150, w.filesHeight || 254)),
+          filesHeight: Math.min(560, Math.max(180, w.filesHeight || 326)),
         });
         restoreRef.current = w.hostIds || [];
         setReady(true);
@@ -703,9 +703,9 @@ export default function App() {
             }
           : {
               filesHeight: Math.max(
-                150,
+                180,
                 Math.min(
-                  window.innerHeight - 240,
+                  window.innerHeight - 260,
                   initial + startY - event.clientY,
                 ),
               ),
@@ -832,22 +832,15 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark">›_</span>
           <strong>Shell EX</strong>
-          <span className="version-tag">0.1</span>
-        </div>
-        <div className="header-center">
-          <button
-            className="command-trigger"
-            onClick={() => {
-              setPalette(true);
-              setPaletteQuery("");
-            }}
-          >
-            <Search size={14} />
-            <span>搜索主机与操作</span>
-            <kbd>⌘ K</kbd>
-          </button>
+          <span className="version-tag">0.2</span>
         </div>
         <div className="header-actions">
+          <IconButton
+            title="快速查找主机和操作 ⌘K"
+            onClick={() => { setPalette(true); setPaletteQuery(""); }}
+          >
+            <Search size={16} />
+          </IconButton>
           <span className={`environment-label${!native ? " preview" : ""}`}>
             {native ? (
               <>
@@ -1231,6 +1224,18 @@ export default function App() {
                   </div>
                 )}
               </div>
+            </section>
+            {workspace.monitorVisible && (
+              <MonitorPanel
+                session={active}
+                settings={settings}
+                notify={notify}
+                onClose={() =>
+                  setWorkspace((w) => ({ ...w, monitorVisible: false }))
+                }
+              />
+            )}
+          </div>
               {workspace.filesVisible && (
                 <>
                   <div
@@ -1310,18 +1315,6 @@ export default function App() {
                   </section>
                 </>
               )}
-            </section>
-            {workspace.monitorVisible && (
-              <MonitorPanel
-                session={active}
-                settings={settings}
-                notify={notify}
-                onClose={() =>
-                  setWorkspace((w) => ({ ...w, monitorVisible: false }))
-                }
-              />
-            )}
-          </div>
         </main>
       </div>
       <footer className="statusbar">

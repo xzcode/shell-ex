@@ -58,6 +58,8 @@ export type FileEntry = {
   size: number;
   modified: number | null;
   permissions: number | null;
+  uid?: number | null;
+  gid?: number | null;
 };
 export type RemoteFile = {
   path: string;
@@ -87,15 +89,21 @@ export type ProcessInfo = {
 export type MonitorSnapshot = {
   hostname: string;
   os: string;
+  kernel?: string;
+  cpuCores?: number;
   uptime: number;
   load: [number, number, number];
   cpuPercent: number | null;
   memoryTotal: number;
   memoryUsed: number;
+  swapTotal?: number;
+  swapUsed?: number;
   diskTotal: number;
   diskUsed: number;
   networkRx: number;
   networkTx: number;
+  networkInterfaces?: { name: string; rx: number; tx: number }[];
+  diskMounts?: { path: string; total: number; used: number; available: number }[];
   processes: ProcessInfo[];
 };
 export type DockerContainer = {
@@ -116,7 +124,7 @@ export type Tunnel = {
   targetPort?: number;
 };
 export type AppSettings = {
-  theme: "dark" | "light";
+  theme: "graphite" | "mist" | "aurora" | "light" | "dark";
   fontSize: number;
   fontFamily: string;
   scrollback: number;
@@ -145,7 +153,7 @@ export type Notify = (
   kind?: "success" | "error" | "info",
 ) => void;
 export const defaultSettings: AppSettings = {
-  theme: "dark",
+  theme: "graphite",
   fontSize: 13,
   fontFamily: "Menlo, Monaco, Consolas, monospace",
   scrollback: 10000,
@@ -158,7 +166,7 @@ export const defaultWorkspace: Workspace = {
   hostIds: [],
   activeHostId: null,
   sidebarWidth: 236,
-  filesHeight: 254,
+  filesHeight: 326,
   monitorVisible: true,
   filesVisible: true,
   split: "none",

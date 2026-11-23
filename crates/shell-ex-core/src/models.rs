@@ -98,7 +98,7 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            theme: "dark".into(),
+            theme: "graphite".into(),
             font_size: 13,
             font_family: "Menlo, Monaco, Consolas, monospace".into(),
             scrollback: 10000,
@@ -134,7 +134,7 @@ impl Default for Workspace {
             host_ids: Vec::new(),
             active_host_id: None,
             sidebar_width: 232.0,
-            files_height: 260.0,
+            files_height: 326.0,
             monitor_visible: true,
             files_visible: true,
             split: "none".into(),
