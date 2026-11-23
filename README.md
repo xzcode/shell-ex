@@ -4,9 +4,9 @@
 
 **Tauri 2 · Rust / Tokio · React / TypeScript · xterm.js · Monaco**
 
-当前版本：`0.1.0`。macOS Apple Silicon 为首发平台，同时提供 Windows x64 和 Linux x64 构建。产品功能按 M0–M5 实现；各平台的实际验证结果与发布条件见 [交付状态](docs/milestones/STATUS.md)，不能用代码存在代替验收结果。
+当前版本：`0.2.0`（工作台布局、文件管理与监控增强）。macOS Apple Silicon 为首发平台，同时提供 Windows x64 和 Linux x64 构建。产品功能按 M0–M5 实现；各平台的实际验证结果与发布条件见 [交付状态](docs/milestones/STATUS.md)，不能用代码存在代替验收结果。
 
-**[下载 v0.1.0 正式版](https://github.com/xzcode/shell-ex/releases/tag/v0.1.0)** · [版本说明](docs/releases/v0.1.0.md) · [界面截图](docs/design/UI.md#本次实现的实际截图) · [安装与更新说明](docs/RELEASE.md)
+**[下载 v0.2.0](https://github.com/xzcode/shell-ex/releases/tag/v0.2.0)** · [版本说明](docs/releases/v0.2.0.md) · [界面截图](docs/design/UI.md#本次实现的实际截图) · [安装与更新说明](docs/RELEASE.md)
 
 本次安装包来源为 `7c5b2e547dabb48de4d42cfd00ed4dde5181cf87`，已随正式 Release `v0.1.0` 发布并设为 Latest，包含 SHA-256 校验文件和构建来源记录。下载仍需要此私有仓库的相应访问权限。正式版本复用已验收的安装包，后续文档与截图提交不改变该构建的业务代码。
 

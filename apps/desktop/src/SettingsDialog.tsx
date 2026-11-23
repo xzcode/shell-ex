@@ -151,7 +151,7 @@ export function SettingsDialog({
       footer={
         <>
           <span className="footer-note">
-            Shell EX · {update?.version || "0.1.0"}
+            Shell EX · {update?.version || "0.2.0"}
           </span>
           <button className="button secondary" onClick={onClose}>
             取消
