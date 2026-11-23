@@ -14,7 +14,9 @@ python3 scripts/ssh_fixture.py cargo test -p shell-ex-core --test files_integrat
 
 首次单元测试发现依赖的 `FileAttributes::is_regular()` 会把符号链接判断为普通文件。所有涉及文件类型的远程操作已改用 `file_type()` 的精确分类，链接拒绝用例修复后通过。
 
-最近一次上述文件集成测试结果：**2 passed，0 failed**，测试主体耗时约 3.64 秒，构建时间另计。测试通过脚本启动独立的回环 OpenSSH 服务，临时生成测试密钥，只在自己的临时目录创建文件；没有连接个人配置中的服务器。
+文件集成测试在本地开发容器通过后，又在 [Verify #45173939448 / core](https://github.com/xzcode/shell-ex/actions/runs/45173939448/job/137690213616) 的 GitHub Ubuntu Runner 上通过。CI 验证提交：`7c5b2e547dabb48de4d42cfd00ed4dde5181cf87`。
+
+最近一次 CI 文件集成测试结果：**2 passed，0 failed，0 ignored**，测试主体耗时 **2.78 秒**，构建时间另计。日志时间为 2026-11-23 20:25:23～20:25:26 马来西亚时间。测试通过脚本启动独立的回环 OpenSSH 服务，临时生成测试密钥，只在自己的临时目录创建文件；没有连接个人配置中的服务器。
 
 | 实际验证场景 | 结果 |
 | --- | --- |
@@ -36,7 +38,7 @@ python3 scripts/ssh_fixture.py cargo test -p shell-ex-core --test files_integrat
 | Linux `/proc` 资源采集 | 内存、运行时间有真实值；第二次采样得到 CPU 差值 |
 | PID 1 管理操作 | 返回 `PROTECTED_PROCESS` |
 
-Docker 容器与镜像查询、有限日志、启动/停止/重启已实现真实 SSH 命令调用；容器 ID 和操作名限制有单元测试。已补充只操作独立测试容器的 opt-in 实测，参见 [Docker 真实集成验收](DOCKER_EVIDENCE.md)。**本地开发容器没有 Docker 服务端，CI 实测须以对应运行日志为证，不能把参数测试或测试编译记为容器生命周期验收。**
+Docker 容器与镜像查询、有限日志、启动/停止/重启已在同一次 GitHub Runner 实测通过：**1 passed，0 failed，12.11 秒**。测试只操作独立的 UUID 标记容器，并确认确切容器 ID 已删除。完整日志标记、镜像 digest 与复现方式见 [Docker 真实集成验收](DOCKER_EVIDENCE.md)。本地开发容器没有 Docker 服务端，Docker 的真实证据来自此次 CI，不来自参数单元测试。
 
 ## 已实现的安全与交互约束
 

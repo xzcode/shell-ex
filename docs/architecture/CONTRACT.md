@@ -1,6 +1,6 @@
 # Shell EX implementation contract
 
-Shared protocol for the initial M0–M5 implementation. JSON fields use camelCase.
+Shared protocol for the initial M0–M5 implementation. JSON fields use camelCase. The Rust command signatures and TypeScript types are the authoritative schema; this document summarizes the interfaces and lifecycle rules.
 
 ## Core Rust modules
 
@@ -14,7 +14,7 @@ Core error = `AppError { code: String, message: String }`; `Result<T>` alias. Co
 `Host` = { id, name, address, port: u16, username, group, authMethod: "password"|"key"|"agent"|"interactive", privateKeyPath: Option<String>, proxy: Option<ProxyConfig>, jumpHostId: Option<String>, startupDirectory: Option<String>, keepAliveSeconds: u32, connectTimeoutSeconds: u32, favorite: bool, color: String, notes: String }. All String unless specified; no secrets persisted here.
 `ProxyConfig` = { kind: "socks5"|"http", host: String, port: u16 } (no authentication in first implementation).
 `SecretInput` = { password: Option<String>, passphrase: Option<String> }, never Debug/log.
-`TerminalEvent` = serde tagged `type`: `data { sessionId, data: String(base64), sequence: u64 }`, `state { sessionId, state: String, message: Option<String> }`, `exit { sessionId, code: Option<u32> }`.
+`TerminalEvent` = serde tagged `type`: `data { sessionId, data: String(base64), sequence: u64 }`, `state { sessionId, state: String, message: Option<String> }`, `exit { sessionId, code: Option<u32> }`, `auth { sessionId, requestId, name, instructions, prompts: { prompt, echo: bool }[] }`.
 `EventSink` = `Arc<dyn Fn(TerminalEvent) + Send + Sync>`.
 
 SSH module should expose `SshManager::new()`, async `probe(&Host)->Result<HostKeyInfo>` (HostKeyInfo {algorithm,fingerprint}), async `connect(&Host, SecretInput, expectedFingerprint: String, EventSink)->Result<String>` (returns session ID), async `write(session_id,&[u8])`, `resize(session_id, cols:u32,rows:u32)`, `disconnect(session_id)`, `exec(session_id, command:&str)->Result<ExecOutput>` (stdout/stderr/status), `sftp(session_id)->Result<Arc<russh_sftp::client::SftpSession>>`.
@@ -39,3 +39,11 @@ PTY module exposes `PtyManager::new()`, `open(cwd:Option<String>, cols:u16,rows:
 `backup_export {path,passphrase,includeCredentials:bool}`; `backup_import {path,passphrase}` -> {hosts:number}.
 
 Use native dialogs (`@tauri-apps/plugin-dialog`) for paths. Browser preview must clearly identify preview mode; no simulated successful SSH connections. Preferences and host edits may use browser localStorage only in explicit preview mode. Do not load external web/CDN scripts; local assets only.
+
+## Terminal delivery and cancellation
+
+`terminal_ack {sessionId,sequence,local}` acknowledges one rendered output frame. The native window is limited to 32 outstanding 16 KiB frames; duplicate acknowledgements are harmless. The frontend serializes acknowledgements, allows 5 seconds per call, and retries the same sequence twice after 250/750 ms. Exhaustion reports an error and requests `session_close`. Disposal cancels pending deadlines/retries and consumes late promise outcomes.
+
+`ssh_auth_respond {requestId,responses:string[]}` answers one interactive challenge. An empty response list cancels a challenge with prompts. An undeliverable native authentication event is cancelled by the native stream wrapper.
+
+Install the event handler before invoking connect/open. Buffer events until the session's xterm instance mounts, then replay them in order. Native registration must precede connected/data delivery. A failed native channel closes only its owning session and associated resources, with one-shot cleanup after registration and weak manager references.

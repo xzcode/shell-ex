@@ -1,6 +1,6 @@
 # SSH、终端与网络功能验证记录
 
-日期：2026-11-23。本文记录此次本地构建和有针对性的验证结果；不把尚未执行的真实平台验收标为通过。
+日期：2026-11-23。本文记录本地构建、协议验证及 GitHub Actions 上真实 OpenSSH 集成测试的结果；不把尚未执行的真实平台验收标为通过。
 
 ## 已实现的接口与行为
 
@@ -68,13 +68,13 @@ python3 scripts/ssh_fixture.py cargo test -p shell-ex-core \
 - 停止本地转发后监听端口关闭。
 - SOCKS5 与 HTTP CONNECT 代理下建立 SSH 连接并执行命令。
 
-## 当前环境限制与 CI 补充入口
+## 本地环境限制与已通过的 CI 验证
 
 本地测试容器的非 root OpenSSH 无法写系统登录记录，真实远程 PTY 请求会触发服务端的 `Attempt to write login records by non-root user`。因此上述本地 OpenSSH 测试使用服务型连接，明确没有执行真实 OpenSSH PTY 分支。
 
 本地容器禁止 Unix 域套接字，临时 `ssh-agent` 启动失败并报告 `Operation not permitted`。因此 SSH Agent 登录分支在此次本地执行中明确排除；接口已编译，但没有据此声称 Agent 登录实际通过。
 
-CI 为此设置以下入口：
+SSH/SFTP 子集可按以下命令复现：
 
 ```sh
 sudo mkdir -p /run/sshd
@@ -84,11 +84,36 @@ SHELL_EX_TEST_SSHD_SUDO=1 python3 scripts/ssh_fixture.py \
   --ignored --test-threads=1
 ```
 
-`SHELL_EX_TEST_SSHD_SUDO=1` 仅使隔离夹具的 OpenSSH 通过 `sudo -n` 启动，测试命令保持当前用户执行。成功进入该模式后夹具启用真实 PTY 分支；SSH Agent 在能启动私人测试套接字的环境中启用。只有取得 CI 的实际成功记录后，才能将这两项记为通过。
+`SHELL_EX_TEST_SSHD_SUDO=1` 仅使隔离夹具的 OpenSSH 通过 `sudo -n` 启动，测试命令保持当前用户执行。成功进入该模式后夹具启用真实 PTY 分支；SSH Agent 在能启动私人测试套接字的环境中启用。
 
-首轮 [Verify CI（45163807792）](https://github.com/xzcode/shell-ex/actions/runs/45163807792) 的 20 项核心单元测试和 1 项认证协议测试通过；OpenSSH 集成测试在登录阶段失败，服务端诊断为 `User runner not allowed because account is locked`。该问题来自 GitHub Linux runner 的锁定密码与夹具 `UsePAM no` 的组合。夹具已调整为仅在 Linux 的 root/sudo 模式启用 PAM 账户与会话处理，继续强制 `AuthenticationMethods publickey`，并关闭密码与交互式认证；不解锁或改动 runner 的系统账户。非特权本地模式继续禁用 PAM。此修复的提权分支须由后续 CI 的实际结果确认。
+首轮 [Verify CI（45163807792）](https://github.com/xzcode/shell-ex/actions/runs/45163807792) 的 20 项核心单元测试和 1 项认证协议测试通过；OpenSSH 集成测试在登录阶段失败，服务端诊断为 `User runner not allowed because account is locked`。该问题来自 GitHub Linux runner 的锁定密码与夹具 `UsePAM no` 的组合。夹具已调整为仅在 Linux 的 root/sudo 模式启用 PAM 账户与会话处理，继续强制 `AuthenticationMethods publickey`，并关闭密码与交互式认证；不解锁或改动 runner 的系统账户。非特权本地模式继续禁用 PAM。
+
+修复后的 [Verify CI 核心作业（45173939448 / 137690213616）](https://github.com/xzcode/shell-ex/actions/runs/45173939448/job/137690213616) 于 2026-11-23成功完成，对应源提交 `7c5b2e547dabb48de4d42cfd00ed4dde5181cf87`。运行环境为 Ubuntu 24.04、OpenSSH 9.6p1，实际结果如下（时间不含编译）：
+
+| 验证范围 | 通过数 | 执行时间 |
+| --- | ---: | ---: |
+| 核心单元测试 | 20 | 8.14 秒 |
+| 密码、交互式认证与终端协议 | 1 | 0.15 秒 |
+| OpenSSH PTY、Agent、跳板、代理及隧道 | 2 | 1.27 秒 |
+| SFTP、传输完整性、目录计划及 Linux 监控 | 2 | 2.78 秒 |
+| 经 SSH 操作真实 Docker 容器 | 1 | 12.11 秒 |
+
+该次夹具以 sudo 模式启动，真实 OpenSSH PTY 成功创建，窗口调整后执行 `stty size` 并校验 `41 119`。私人 SSH Agent 成功载入临时密钥，通过 Agent 完成认证并执行命令；日志中没有本地环境下的 PTY 或 Agent 排除提示。因此这两项已取得 Linux CI 的真实执行证据。跳板连接、本地/远程/动态转发、SOCKS5/HTTP CONNECT 代理同时通过。
 
 macOS 原生 Keychain、Windows OpenSSH Agent、真实服务器上的全屏交互程序、休眠唤醒后的网络恢复仍需要对应平台的验证。Mac 安装包签名与公证属于发布验证，不由上述核心测试替代。
+
+## 终端输出故障与会话清理
+
+最终提交 `7c5b2e547dabb48de4d42cfd00ed4dde5181cf87` 的 [UI 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939448/job/137690213209) 中，`terminal-ack.spec.ts` 已通过。测试注入发送器与手动时钟，验证同序号重试、按序恢复、三次尝试耗尽、每次五秒期限、取消后的计时器清理，以及迟到的成功/失败结果；不会把 36 ms 的测试执行时间当作实际等待了全部超时期限。
+
+同一提交的 [Linux 桌面作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212872) 在 release 模式实际执行两项 `terminal_delivery_tests`，结果为 **2 passed、0 failed、0 ignored，0.01 秒**：
+
+| 测试 | 验证范围 |
+| --- | --- |
+| `early_delivery_failure_cancels_auth_and_closes_after_registration_once` | 注入事件通道发送失败；注册前不提前消耗清理机会，无法送达的认证提示被取消，注册后只清理一次 |
+| `failed_native_channel_closes_only_its_registered_local_pty` | 创建两个真实系统 PTY，给其中一个注入失效通道；其会话被清理，另一个仍可调整窗口尺寸并正常关闭 |
+
+这两项运行于原生 Rust 桌面 crate，通道错误由测试注入；它们没有启动真实 WebView。界面交互、协议互操作、系统 PTY 和原生通道清理分别取得证据，不将其中一个范围等同于全部桌面端到端验收。
 
 ## OpenSSH 配置导入的修复与边界
 

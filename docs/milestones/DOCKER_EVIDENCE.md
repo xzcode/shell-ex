@@ -4,12 +4,30 @@
 
 测试文件：`crates/shell-ex-core/tests/docker_integration.rs`。
 
-## 当前证据状态
+## 已取得的 CI 证据
+
+**真实 Docker 验收通过。** 运行：[Verify #45173939448 / core](https://github.com/xzcode/shell-ex/actions/runs/45173939448/job/137690213616)。验证提交：[`7c5b2e547dabb48de4d42cfd00ed4dde5181cf87`](https://github.com/xzcode/shell-ex/commit/7c5b2e547dabb48de4d42cfd00ed4dde5181cf87)。
+
+- 环境：临时 GitHub Ubuntu Runner、Rust 1.100.0、本地 Docker daemon、独立回环 OpenSSH。
+- 日志明确显示 `SHELL_EX_TEST_DOCKER: 1`，测试实际执行，没有走跳过路径。
+- `docker_images_logs_and_owned_container_lifecycle_over_ssh`：**1 passed，0 failed，0 ignored，12.11 秒**。
+- 成功日志时间：2026-11-23 20:25:23 马来西亚时间（12:25:23 UTC）。
+- 实际拉取 `busybox:1.37.0`，记录的 digest 为 `sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec`。
+- 创建并清理的完整容器 ID：`dfb42cd065eeb87960f79f9ccc343a5cc32d65cc0cd5b3fda8c93a5796d34851`。
+
+日志中的两条最终证据：
+
+```text
+Validated through SSH: images, containers, stdout/stderr logs, start, stop, restart (dfb42cd065eeb87960f79f9ccc343a5cc32d65cc0cd5b3fda8c93a5796d34851)
+Confirmed exact owned Docker container removed; other containers/images untouched
+```
+
+## 测试启用规则
 
 - 已实现真实 Docker 集成测试，调用现有 `DockerService`，经回环 OpenSSH 连接访问 Docker CLI；没有模拟 Docker 输出。
 - 测试默认忽略，且需要显式设置 `SHELL_EX_TEST_DOCKER=1`。
-- 本地开发容器没有 Docker CLI/daemon，因此这里只完成测试编译；不能把编译通过当作 Docker 生命周期实测通过。
-- CI 实测结果以 GitHub Actions 对应提交的日志为准。成功日志必须同时包含 `Validated through SSH` 与 `Confirmed exact owned Docker container removed`，并且测试实际启用了开关；`SKIP Docker lifecycle` 不属于实测证据。
+- 本地开发容器没有 Docker CLI/daemon，本地只执行测试编译；上面的真实运行证据来自 GitHub Runner。
+- 后续 CI 实测结果仍以对应提交日志为准。成功日志必须同时包含 `Validated through SSH` 与 `Confirmed exact owned Docker container removed`，并且测试实际启用了开关；`SKIP Docker lifecycle` 不属于实测证据。
 
 ## CI 准备及执行
 

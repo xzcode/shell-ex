@@ -16,13 +16,53 @@
 
 `verify.yml` 独立运行核心风险/回环 OpenSSH 测试与 Playwright 交互/截图检查。master 的界面报告也存入对应构建草稿，测试截图来自专用 TEST-NET 虚构主机。PR 不上传发行资产。构建不会公开仓库或上传用户主机配置。
 
+终端 ACK 恢复补丁通过对应提交的界面测试与 Linux 桌面原生通道清理测试验收。`terminal-ack.spec.ts` 覆盖顺序恢复、重试耗尽、超时和取消后的晚到结果；Linux 打包任务执行 `terminal_delivery_tests`，覆盖事件传递失败时的所属会话清理。以下结果均引用本次来源提交的实际工作流。
+
+## 本次构建结果
+
+来源提交：`7c5b2e547dabb48de4d42cfd00ed4dde5181cf87`。对应 [构建草稿 build-7c5b2e547dab](https://github.com/xzcode/shell-ex/releases/tag/untagged-6d29ca13145ab69d76fb)，安装包来自已成功完成的 [Desktop packages 45173939358](https://github.com/xzcode/shell-ex/actions/runs/45173939358)。三个平台各自上传安装包、SHA-256 校验文件及 `build.json`，共 9 份平台资产；草稿仍保持未发布。文档后续更新不改变这些安装包的代码来源。
+
+| 平台 | 安装包 | 当前结果 | 作业证据 |
+| --- | --- | --- | --- |
+| macOS Apple Silicon | `.dmg` | 构建与草稿上传成功 | [macOS 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212900) |
+| Windows x64 | NSIS `.exe` | 构建与草稿上传成功 | [Windows 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212384) |
+| Linux x64 | `.deb` | 构建与草稿上传成功，原生通道清理 2 项测试通过 | [Linux 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212872) |
+
+已确认的安装包与大小：
+
+| 平台 | 安装包文件 | 大小，字节 |
+| --- | --- | ---: |
+| macOS Apple Silicon | `Shell-EX_0.1.0_aarch64-r45173939358.1.dmg` | 8,324,314 |
+| Windows x64 | `Shell-EX_0.1.0_x64-setup-r45173939358.1.exe` | 7,809,111 |
+| Linux x64 | `Shell-EX_0.1.0_amd64-r45173939358.1.deb` | 9,013,590 |
+
+对应 SHA-256：
+
+```text
+e8ee75ddb6e25cfa02b260ed22c79b50f0ae3fc8ce740a70842a820f4a1d7136  Shell-EX_0.1.0_aarch64-r45173939358.1.dmg
+d03f72b097a99a24bf65b74923400c782d4eb9a03deadd22558a644a6903e21e  Shell-EX_0.1.0_x64-setup-r45173939358.1.exe
+786768dc3a6aeabfc8400386e2e87a0bb88067ebd6880324a59b7f189208a09a  Shell-EX_0.1.0_amd64-r45173939358.1.deb
+```
+
+同一提交的 [Verify 核心作业](https://github.com/xzcode/shell-ex/actions/runs/45173939448/job/137690213616) 通过 26 项测试；[界面作业](https://github.com/xzcode/shell-ex/actions/runs/45173939448/job/137690213209) 的 2 项 Playwright 测试通过，报告总耗时 38.1 秒；[Linux 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212872) 的原生通道清理测试 2 项通过、0 失败、0 忽略，耗时 0.01 秒。合计 **30 项通过：26 + 2 + 2**。核心测试、平台构建与界面验收分别记录，不能互相替代。当前 macOS 包采用 ad-hoc 签名，未做 Apple Developer 公证；Windows 包未做 Authenticode 签名。
+
 ## 本机安装
 
 macOS：打开 DMG，把 Shell EX 拖入 Applications。当前构建使用 ad-hoc 签名，不代表 Apple Developer 身份验证或公证。系统如果要求允许打开，应先核对下载来自此私有仓库的预期构建；不需要关闭全局 Gatekeeper。
 
-Windows：运行 NSIS 安装程序。没有 Authenticode 证书的个人构建可能显示未识别发布者。Linux：用系统包管理器安装 `.deb`，需要图形会话与 WebKitGTK 4.1 运行时；保存密码还需要可用的 Secret Service。
+Windows：运行 NSIS 安装程序。没有 Authenticode 证书的个人构建可能显示未识别发布者。Linux：用系统包管理器安装 `.deb`，需要图形会话；已确认包的 `Depends` 包含 `fonts-noto-cjk`、`libwebkit2gtk-4.1-0` 和 `libgtk-3-0`，分别提供中文字体及桌面运行时；保存密码还需要可用的 Secret Service。
+
+Linux 包在 Ubuntu 24.04 x64 上构建；其它发行版需具备兼容的系统库，当前没有覆盖所有 Linux 发行版的安装验证。macOS 本次仅提供 Apple Silicon 产物。
 
 本机源码启动步骤在 README。CI 的产物构建成功只证明对应工具链成功完成打包，不代替每台真实设备上的登录、系统凭据库和交互验收。
+
+## 终端异常时的使用行为
+
+终端确认通信短暂失败时会自动重试，每次调用 5 秒超时、最多 3 次尝试。持续失败会停止该终端输入，显示错误并关闭所属会话及关联资源；其它连接继续独立工作。前端事件无法送达时，原生后端也会触发所属会话清理。不能确认关闭成功时，界面保留关闭失败提示。
+
+手动关闭源会话会取消它的整条自动重连流程；身份探测、凭据检查及连接步骤返回后都会检查取消状态。已经发出的连接请求如果随后成功，应用会立即请求关闭新会话，不重新打开已取消的连接。若关闭失败，会保留可操作的错误标签页并停止该会话的自动重连，供用户重试关闭。
+
+重新连接创建新的远程 shell，不承诺恢复断线前的进程。应用退出也会取消重连流程。安装升级或退出应用前应保存编辑内容、处理正在进行的传输；当前传输队列不支持跨应用重启恢复。
 
 ## macOS 正式公证
 

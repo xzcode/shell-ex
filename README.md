@@ -6,6 +6,14 @@
 
 当前版本：`0.1.0`。macOS Apple Silicon 为首发平台，同时提供 Windows x64 和 Linux x64 构建。产品功能按 M0–M5 实现；各平台的实际验证结果与发布条件见 [交付状态](docs/milestones/STATUS.md)，不能用代码存在代替验收结果。
 
+**[下载安装包](https://github.com/xzcode/shell-ex/releases/tag/untagged-6d29ca13145ab69d76fb)** · [界面截图](docs/design/UI.md#本次实现的实际截图) · [安装与更新说明](docs/RELEASE.md)
+
+本次安装包来源为 `7c5b2e547dabb48de4d42cfd00ed4dde5181cf87`，保存在对应的 Release 草稿中，包含 SHA-256 校验文件和构建来源记录。私有仓库的草稿需要相应访问权限。后续文档与截图提交不改变该构建的业务代码。
+
+![Shell EX 深色工作台](docs/design/images/workbench-dark.png)
+
+上图为实际界面预览；服务器操作由桌面程序执行，截图没有模拟成功连接。
+
 ## 功能
 
 | 工作域 | 已实现的能力 |

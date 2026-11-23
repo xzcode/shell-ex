@@ -10,20 +10,43 @@
 | --- | --- |
 | apps/desktop/src/App.tsx | 会话、主机、布局、认证交互 |
 | apps/desktop/src/TerminalView.tsx | xterm 输出、ACK、尺寸、搜索、剪贴板 |
+| apps/desktop/src/terminalAck.ts | 按序确认、超时与有界重试、终止后清理 |
 | apps/desktop/src/FilePanel.tsx / RemoteEditor.tsx | 文件操作与草稿 |
 | apps/desktop/src/OperationsPanels.tsx | 传输、命令、隧道、容器 |
 | apps/desktop/src-tauri/src/lib.rs | IPC、配置/凭据事务协调、生命周期 |
 | crates/shell-ex-core/src/ssh.rs / pty.rs / tunnels.rs | 连接、终端、转发 |
-| crates/shell-ex-core/src/files.rs / transfers.rs | 文件完整性与队列 |
+| crates/shell-ex-core/src/files.rs / transfers.rs / directory_transfers.rs | 文件完整性、传输队列与目录规划 |
 | crates/shell-ex-core/src/storage.rs / credentials.rs / backup.rs | 数据、信任、系统凭据与备份 |
 | crates/shell-ex-core/src/import.rs | 保守的 SSH config 导入 |
 | crates/shell-ex-core/src/monitor.rs / docker.rs | 受控运维操作 |
 
-## 已验证和待验证
+## 已验证与实机边界
 
 见 [状态表](milestones/STATUS.md)、[SSH 证据](milestones/SSH_EVIDENCE.md)、[文件证据](milestones/FILE_TRANSFER_EVIDENCE.md)。以实际结果为准，不能从某个模块编译通过推断三个系统全部实机通过。
 
-本地沙箱限制 Unix socket，不能启动 Chromium 或 SSH Agent；非 root OpenSSH 不能写登录记录。已分别用真实本地 PTY、受控 SSH 认证/PTY 协议、真实 OpenSSH service/SFTP/转发测试覆盖，完整 OpenSSH PTY、Agent 与浏览器截图由 CI/对应系统补充。
+本次交付的构建来源为 `7c5b2e547dabb48de4d42cfd00ed4dde5181cf87`，已包含终端 ACK 恢复及关闭自动重连链的补丁。[Verify 核心作业](https://github.com/xzcode/shell-ex/actions/runs/45173939448/job/137690213616) 的 26 项测试、[界面作业](https://github.com/xzcode/shell-ex/actions/runs/45173939448/job/137690213209) 的 2 项 Playwright 测试，以及 [Linux 原生通道清理作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212872) 的 2 项测试均通过，合计 **30 项**。
+
+[Verify 45173939448](https://github.com/xzcode/shell-ex/actions/runs/45173939448) 与 [Desktop packages 45173939358](https://github.com/xzcode/shell-ex/actions/runs/45173939358) 均成功完成。macOS Apple Silicon、Windows x64 和 Linux x64 的安装包、SHA-256 文件及构建记录已上传至 [本次构建草稿](https://github.com/xzcode/shell-ex/releases/tag/untagged-6d29ca13145ab69d76fb)。完整状态与校验值分别记录在 [状态表](milestones/STATUS.md) 和 [发行说明](RELEASE.md)。后续文档和截图继续按各自产物的来源提交记录。三平台构建通过不代替用户设备上的安装、系统凭据库与交互体验验收。
+
+本地沙箱限制 Unix socket，不能启动 Chromium 或 SSH Agent；非 root OpenSSH 不能写登录记录。GitHub Linux CI 已补齐真实 OpenSSH PTY、Agent、SFTP/转发和 Docker daemon 的实际验证，共 26 项通过。对应日志与来源提交保存在状态和各模块证据文档中。
+
+首轮安装包上传遇到账户 Actions artifact 配额耗尽，已使用 `scripts/publish_build.py` 保存到按提交区分的 Release 草稿；每个文件包含运行编号和重试序号，既有产物不被覆盖。构建不自动发布草稿。浏览器测试使用保留测试地址，不建立 SSH；截图与报告独立保存。
+
+## 终端传递与关闭语义
+
+SSH 和本地 PTY 的终端输出使用同一套按序号确认机制：只有 xterm 处理该帧并触发 `write` 完成回调后才发送 ACK。后端每个会话最多保留 32 个尚未确认的数据帧，每帧最多 16 KiB；这是输出流控窗口，不是应用总内存上限。重复或晚到的同序号 ACK 不重复释放额度。
+
+`TerminalAckController` 对每次 IPC 调用设置 5 秒期限，同一 ACK 最多尝试 3 次，两次重试分别等待 250 ms、750 ms。按 `write` 回调完成顺序串行发送，单帧持续失败后停止队列并只报告一次故障。会话结束、组件卸载或主动关闭会取消剩余等待与重试；已发出的 IPC 的晚到结果仍被接收处理，避免未捕获的异步拒绝。
+
+ACK 无法恢复时，界面停止该终端输入、保留明确错误状态并请求关闭所属会话。Rust 向前端发送事件失败时也有独立清理路径：不可送达的认证提示取消等待，已注册的会话只触发一次关闭。远程关闭取消该会话的传输、监控和隧道后断开 SSH；本地关闭终止所属 PTY。其它主机和本地终端不参与这次清理。
+
+每条自动重连链由源会话持有一个 `AbortController`。用户手动关闭源会话时，先标记 `closing`、中止对应 `AbortSignal` 并清除重连计时器；每次重连尝试及计时回调执行前检查取消状态，主机指纹探测、凭据检查、SSH 连接等异步步骤返回后再次检查。取消也会移除这次重连的认证请求，并以空响应结束仍在等待的认证交互。
+
+这个前端取消信号不会直接撤回已发出的原生 SSH 连接调用；如果调用在取消后返回新会话 ID，界面会立即请求关闭该晚到会话。关闭成功后丢弃它的终端和状态缓存，不把它作为成功连接加入工作台。若关闭失败，则保留可操作的错误标签页，显示具体错误并禁止该会话再次自动重连，供用户重试关闭。源会话的关闭 IPC 若失败，也保留可见错误状态而非假报已关闭。
+
+自动重连始终建立新 SSH 会话，不能恢复普通 shell 中已中断的远程进程；是否保留远程任务取决于服务器及 tmux 等工具。应用退出时也会中止所有自动重连链与计时器。
+
+`apps/desktop/tests/terminal-ack.spec.ts` 已随本次界面作业执行并通过，包含在上文 2 项 Playwright 测试内。桌面 Rust 的 `terminal_delivery_tests` 在 Linux 作业中实测 2 项通过、0 失败、0 忽略，耗时 0.01 秒：认证事件早期传递失败后取消认证并仅关闭一次已注册会话，以及原生通道失败只关闭其所属本地 PTY。这两项计入上文 30 项总数。
 
 ## 后续工作方法
 
