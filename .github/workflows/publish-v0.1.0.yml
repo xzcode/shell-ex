@@ -1,0 +1,91 @@
+name: Publish Shell EX v0.1.0
+on:
+  push:
+    branches: ['release/v0.1.0']
+    paths: ['.github/workflows/publish-v0.1.0.yml', 'docs/releases/v0.1.0.md']
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: release-v0.1.0
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'xzcode/shell-ex' && github.ref == 'refs/heads/release/v0.1.0'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify and publish the accepted installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          
+          repo = os.environ["GITHUB_REPOSITORY"]
+          assert repo == "xzcode/shell-ex"
+          source = "7c5b2e547dabb48de4d42cfd00ed4dde5181cf87"
+          release_id = 455394901
+          tag = "v0.1.0"
+          expected_assets = {"Shell-EX-Linux-x64-r45173939358.1.build.json":{"id":782884876,"size":413,"digest":"sha256:613b91381887b45d323b9b5d73d910be49f06d1dd2fcf1fdfb3ae3559a69719b"},"Shell-EX-Linux-x64-r45173939358.1.sha256":{"id":782884871,"size":106,"digest":"sha256:5e2daa8184672accb4417ee8227124ebe4353e870e8a66f4eb8087baf10eb278"},"Shell-EX-macOS-Apple-Silicon-r45173939358.1.build.json":{"id":782854650,"size":431,"digest":"sha256:fc4c57e0db86007b8d232ef362660bb1cf69d6ae16845aefe2ebe32df14f30b0"},"Shell-EX-macOS-Apple-Silicon-r45173939358.1.sha256":{"id":782854651,"size":108,"digest":"sha256:7f4638ef8100bf0350b6ba79bc24c5cc90c85fe6c19f69506a064cfba421bce4"},"Shell-EX-UI-r45173939448.1.build.json":{"id":782853650,"size":381,"digest":"sha256:37ec438020be0e20a74192614499942f1ee42ebe26ef36671560bdeed3d5f01d"},"Shell-EX-UI-r45173939448.1.sha256":{"id":782853658,"size":110,"digest":"sha256:fac20a7cf7a63f59122627728c7b8318e265908496641ce9c0f4a72816b98043"},"Shell-EX-UI-verification-r45173939448.1.zip":{"id":782853649,"size":639166,"digest":"sha256:1c20fbcfe7ce141ba0b3bf22580d68c32a3eef92859262252849e158ec788b66"},"Shell-EX-Windows-x64-r45173939358.1.build.json":{"id":782875152,"size":431,"digest":"sha256:6dde82a4d73c468f46aa7ba1d6996f004ec0f37ab3ba0705fc39c4f6933c0d78"},"Shell-EX-Windows-x64-r45173939358.1.sha256":{"id":782875141,"size":111,"digest":"sha256:c07e501f74c2a43cb3115c768e685a69aedd827fe74bd1e87967eef9a55765de"},"Shell-EX_0.1.0_aarch64-r45173939358.1.dmg":{"id":782854649,"size":8324314,"digest":"sha256:e8ee75ddb6e25cfa02b260ed22c79b50f0ae3fc8ce740a70842a820f4a1d7136"},"Shell-EX_0.1.0_amd64-r45173939358.1.deb":{"id":782884872,"size":9013590,"digest":"sha256:786768dc3a6aeabfc8400386e2e87a0bb88067ebd6880324a59b7f189208a09a"},"Shell-EX_0.1.0_x64-setup-r45173939358.1.exe":{"id":782875143,"size":7809111,"digest":"sha256:d03f72b097a99a24bf65b74923400c782d4eb9a03deadd22558a644a6903e21e"}}
+          
+          def api(method, endpoint, payload=None, allow_missing=False):
+              args = ["gh", "api", "--method", method, f"repos/{repo}/{endpoint}"]
+              if payload is not None:
+                  args += ["--input", "-"]
+              result = subprocess.run(args, input=json.dumps(payload) if payload is not None else None,
+                                      text=True, capture_output=True)
+              if result.returncode:
+                  if allow_missing and "HTTP 404" in result.stderr:
+                      return None
+                  raise RuntimeError(f"{method} {endpoint}: {result.stderr.strip()}")
+              return json.loads(result.stdout)
+          
+          def asset_snapshot(release):
+              assert all(asset["state"] == "uploaded" for asset in release["assets"])
+              return {asset["name"]: {key: asset.get(key) for key in ("id", "size", "digest")}
+                      for asset in release["assets"]}
+          
+          for run_id in (45173939448, 45173939358):
+              run = api("GET", f"actions/runs/{run_id}")
+              assert run["head_sha"] == source and run["status"] == "completed" and run["conclusion"] == "success"
+          
+          release = api("GET", f"releases/{release_id}")
+          assert release["target_commitish"] == source
+          assert asset_snapshot(release) == expected_assets
+          assert len(expected_assets) == 12
+          if not release["draft"]:
+              assert release["tag_name"] == tag and not release["prerelease"]
+              print("Already published:", release["html_url"])
+          else:
+              assert release["tag_name"] == "build-7c5b2e547dab"
+              existing_release = api("GET", f"releases/tags/{tag}", allow_missing=True)
+              assert existing_release is None or existing_release["id"] == release_id
+              ref = api("GET", f"git/ref/tags/{tag}", allow_missing=True)
+              if ref is None:
+                  ref = api("POST", "git/refs", {"ref": f"refs/tags/{tag}", "sha": source})
+              assert ref["object"]["type"] == "commit" and ref["object"]["sha"] == source
+          
+              notes = pathlib.Path("docs/releases/v0.1.0.md").read_text(encoding="utf-8")
+              assert source in notes and "30" in notes
+              release = api("PATCH", f"releases/{release_id}", {
+                  "tag_name": tag, "target_commitish": source, "name": "Shell EX v0.1.0",
+                  "body": notes, "draft": False, "prerelease": False, "make_latest": "true"
+              })
+              assert not release["draft"] and not release["prerelease"] and release["tag_name"] == tag
+              assert asset_snapshot(release) == expected_assets
+              print("Published:", release["html_url"])
+          
+          latest = api("GET", "releases/latest")
+          assert latest["id"] == release_id and latest["tag_name"] == tag
+          ref = api("GET", f"git/ref/tags/{tag}")
+          assert ref["object"]["type"] == "commit" and ref["object"]["sha"] == source
+          print("Verified source tag, latest release, and all 12 unchanged assets.")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(f"# Shell EX v0.1.0 published\n\n[Download release]({release['html_url']})\n\n")
+              summary.write(f"Source: `{source}`. All 12 existing assets retained; no rebuild.\n")
+          PY
