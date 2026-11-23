@@ -6,13 +6,13 @@
 
 当前版本：`0.2.0`（工作台布局、文件管理与监控增强）。macOS Apple Silicon 为首发平台，同时提供 Windows x64 和 Linux x64 构建。产品功能按 M0–M5 实现；各平台的实际验证结果与发布条件见 [交付状态](docs/milestones/STATUS.md)，不能用代码存在代替验收结果。
 
-**[下载 v0.2.0](https://github.com/xzcode/shell-ex/releases/tag/v0.2.0)** · [版本说明](docs/releases/v0.2.0.md) · [界面截图](docs/design/UI.md#本次实现的实际截图) · [安装与更新说明](docs/RELEASE.md)
+**[下载 v0.2.0](https://github.com/xzcode/shell-ex/releases/tag/v0.2.0)** · [版本说明](docs/releases/v0.2.0.md) · [界面截图](docs/design/UI.md#v020-实际界面预览) · [安装与更新说明](docs/RELEASE.md)
 
-本次安装包来源为 `7c5b2e547dabb48de4d42cfd00ed4dde5181cf87`，已随正式 Release `v0.1.0` 发布并设为 Latest，包含 SHA-256 校验文件和构建来源记录。下载仍需要此私有仓库的相应访问权限。正式版本复用已验收的安装包，后续文档与截图提交不改变该构建的业务代码。
+v0.2.0 业务代码来源为 `f7c4d61f0bbea30b2251f051484a1852f0388be4`，三平台安装包须与这一提交对应，并提供 SHA-256 校验文件和构建记录。私有仓库附件需要相应 GitHub 权限；[v0.1.0 旧版](https://github.com/xzcode/shell-ex/releases/tag/v0.1.0) 仍予保留。
 
-![Shell EX 深色工作台](docs/design/images/workbench-dark.png)
+![Shell EX v0.2.0 石墨灰工作台](docs/design/images/workbench-v0.2-graphite.png)
 
-上图为实际界面预览；服务器操作由桌面程序执行，截图没有模拟成功连接。
+这是 v0.2.0 **真实浏览器界面预览**，处于未连接状态；主机地址属于 TEST-NET 测试数据，不是模拟成功 SSH。还可查看 [雾光浅色界面](docs/design/images/workbench-v0.2-mist.png)。真实 Linux 监控与 SFTP 目录树只有连接桌面应用的服务器后才会显示实际数据。
 
 ## 功能
 
@@ -20,10 +20,10 @@
 | --- | --- |
 | 主机 | 分组、搜索、收藏、复制、配置编辑、SSH config 导入预览、加密迁移 |
 | 终端 | SSH 密码/私钥/Agent/交互式认证，本地 PTY，多标签、上下/左右分屏、搜索、字体与主题、尺寸同步、重连 |
-| 文件 | SFTP 浏览、多选、目录创建、重命名、权限修改、删除文件/空目录、拖拽上传 |
+| 文件 | 底部全宽双栏 SFTP：懒加载目录树、文件表格（类型、时间、POSIX 权限、UID/GID）、多选、目录创建、重命名、权限修改、拖拽上传 |
 | 传输 | 上传/下载、目录规划、覆盖策略、有界并发、真实进度、暂停/续传/取消、SHA-256 校验 |
 | 编辑 | 本地 Monaco、UTF-8 文本、语法高亮、搜索替换、冲突检测、临时文件与原子替换、另存为 |
-| 监控 | Linux CPU、内存、负载、根文件系统容量、网络速率、进程列表与明确触发的信号操作 |
+| 监控 | Linux CPU/趋势、内存、Swap、负载、内核、CPU 核数、挂载点、网卡流量曲线与进程列表；明确触发的信号操作 |
 | 网络 | SOCKS5 / HTTP CONNECT、跳板、SSH 本地/远程/动态转发 |
 | 运维 | 快捷命令、Docker 容器与镜像列表、日志、启动/停止/重启 |
 | 数据 | SQLite 配置、系统凭据库、Argon2id + AES-256-GCM 备份、工作区布局恢复 |
@@ -98,6 +98,7 @@ npm run build
 - [架构与技术决策](docs/architecture/ARCHITECTURE.md)
 - [安全与数据约定](docs/SECURITY.md)
 - [发行与升级](docs/RELEASE.md)
+- [v0.2.0 版本说明](docs/releases/v0.2.0.md)
 - [v0.1.0 版本说明](docs/releases/v0.1.0.md)
 - [开发交接](docs/HANDOFF.md)
 - [M0–M5 状态和验证](docs/milestones/STATUS.md)
