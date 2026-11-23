@@ -194,6 +194,17 @@ export function MonitorPanel({ session, settings, notify, onClose }: {
           </div>
           <section className="monitor-card">
             <div className="monitor-card-heading">
+              <h4><Gauge size={13} /> CPU 近期趋势</h4>
+              <small className="muted">{cpuHistory.length ? cpuHistory.length + " 次采样" : "等待采样"}</small>
+            </div>
+            <svg className="monitor-cpu-chart" viewBox="0 0 300 46" preserveAspectRatio="none" role="img" aria-label="最近 CPU 使用率趋势">
+              <path d="M0 1H300M0 23H300M0 45H300" fill="none" stroke="var(--border)" strokeWidth="0.7" />
+              <polyline fill="none" stroke="var(--accent)" strokeWidth="2" vectorEffect="non-scaling-stroke"
+                points={cpuHistory.map((n, i) => (i / Math.max(1, cpuHistory.length - 1) * 300).toFixed(1) + "," + (45 - n / 100 * 44).toFixed(1)).join(" ")} />
+            </svg>
+          </section>
+          <section className="monitor-card">
+            <div className="monitor-card-heading">
               <h4><Network size={13} /> 网络流量</h4>
               <select className="monitor-traffic-select" value={selectedInterface}
                 onChange={(e) => setSelectedInterface(e.target.value)} aria-label="网卡接口">

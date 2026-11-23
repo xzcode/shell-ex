@@ -2778,3 +2778,5 @@ select:not([multiple]) {
   .monitor-identity small { display:none; }
   .monitor-metric-card { padding:7px; }
 }
+
+.monitor-cpu-chart { display:block; width:100%; height:42px; margin-top:4px; }

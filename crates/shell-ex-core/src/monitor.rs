@@ -154,7 +154,8 @@ fn parse_snapshot(text: &str) -> Result<(MonitorSnapshot, (u64, u64))> {
         .to_string();
     let os = section(text, "OS")?.trim_matches('"').to_string();
     let kernel = section(text, "KERNEL").ok().unwrap_or("—").to_string();
-    let cpu_cores = section(text, "CORES").ok()
+    let cpu_cores = section(text, "CORES")
+        .ok()
         .and_then(|s| s.trim().parse::<u32>().ok())
         .unwrap_or(0);
     let uptime = parse_num(section(text, "UPTIME")?.split_whitespace().next());
@@ -194,7 +195,8 @@ fn parse_snapshot(text: &str) -> Result<(MonitorSnapshot, (u64, u64))> {
     });
     let memory_used = memory_total.saturating_sub(available);
     let swap_total = memory.get("SwapTotal").copied().unwrap_or(0);
-    let swap_used = swap_total.saturating_sub(memory.get("SwapFree").copied().unwrap_or(swap_total));
+    let swap_used =
+        swap_total.saturating_sub(memory.get("SwapFree").copied().unwrap_or(swap_total));
     let mut network_interfaces = Vec::new();
     let mut network_rx = 0u64;
     let mut network_tx = 0u64;
@@ -206,12 +208,22 @@ fn parse_snapshot(text: &str) -> Result<(MonitorSnapshot, (u64, u64))> {
             continue;
         }
         let fields: Vec<_> = stats.split_whitespace().collect();
-        let rx = fields.first().and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-        let tx = fields.get(8).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+        let rx = fields
+            .first()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0);
+        let tx = fields
+            .get(8)
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0);
         network_rx = network_rx.saturating_add(rx);
         network_tx = network_tx.saturating_add(tx);
         if network_interfaces.len() < 32 {
-            network_interfaces.push(NetworkInterface { name: name.trim().to_string(), rx, tx });
+            network_interfaces.push(NetworkInterface {
+                name: name.trim().to_string(),
+                rx,
+                tx,
+            });
         }
     }
     let disk_fields: Vec<_> = section(text, "DISK")?.split_whitespace().collect();
@@ -225,16 +237,30 @@ fn parse_snapshot(text: &str) -> Result<(MonitorSnapshot, (u64, u64))> {
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0)
         .saturating_mul(1024);
-    let disk_mounts = section(text, "MOUNTS").ok().map(|data| {
-        data.lines().skip(1).take(30).filter_map(|line| {
-            let f: Vec<_> = line.split_whitespace().collect();
-            if f.len() < 6 { return None; }
-            let total = f.get(1)?.parse::<u64>().ok()?.saturating_mul(1024);
-            let used = f.get(2)?.parse::<u64>().ok()?.saturating_mul(1024);
-            let available = f.get(3)?.parse::<u64>().ok()?.saturating_mul(1024);
-            Some(DiskMount { path: f[5..].join(" "), total, used, available })
-        }).collect::<Vec<_>>()
-    }).unwrap_or_default();
+    let disk_mounts = section(text, "MOUNTS")
+        .ok()
+        .map(|data| {
+            data.lines()
+                .skip(1)
+                .take(30)
+                .filter_map(|line| {
+                    let f: Vec<_> = line.split_whitespace().collect();
+                    if f.len() < 6 {
+                        return None;
+                    }
+                    let total = f.get(1)?.parse::<u64>().ok()?.saturating_mul(1024);
+                    let used = f.get(2)?.parse::<u64>().ok()?.saturating_mul(1024);
+                    let available = f.get(3)?.parse::<u64>().ok()?.saturating_mul(1024);
+                    Some(DiskMount {
+                        path: f[5..].join(" "),
+                        total,
+                        used,
+                        available,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let processes = section(text, "PROCESSES")?
         .lines()
         .filter_map(|line| {
