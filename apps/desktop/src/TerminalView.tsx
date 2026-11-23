@@ -24,9 +24,9 @@ export function forgetTerminal(id: string) {
   sinks.delete(id);
   pending.delete(id);
 }
-const darkTheme = {
-  background: "#0c1118",
-  foreground: "#cbd5e1",
+const graphiteTheme = {
+  background: "#191e26",
+  foreground: "#e4e9ee",
   cursor: "#91bdff",
   selectionBackground: "#36557c80",
   black: "#1d2734",
@@ -38,6 +38,31 @@ const darkTheme = {
   cyan: "#71c8d1",
   white: "#d7dfe9",
   brightBlack: "#77869b",
+};
+const auroraTheme = {
+  ...graphiteTheme,
+  background: "#151e1c",
+  foreground: "#e3eee8",
+  cursor: "#84d6bd",
+  selectionBackground: "#3b746180",
+  green: "#79cfb7",
+  blue: "#83b8da",
+  cyan: "#7acdc2",
+};
+const mistTheme = {
+  background: "#fbfbfa",
+  foreground: "#26333d",
+  cursor: "#417ac4",
+  selectionBackground: "#c9d9ec80",
+  black: "#28343c",
+  red: "#a94454",
+  green: "#287b61",
+  yellow: "#977025",
+  blue: "#417ac4",
+  magenta: "#8451ac",
+  cyan: "#337f82",
+  white: "#e3e9ef",
+  brightBlack: "#7e8b94",
 };
 const lightTheme = {
   background: "#fbfcfe",
@@ -53,6 +78,13 @@ const lightTheme = {
   cyan: "#287984",
   white: "#dae2ed",
   brightBlack: "#7d8ca1",
+};
+const terminalThemes = {
+  graphite: graphiteTheme,
+  dark: graphiteTheme,
+  aurora: auroraTheme,
+  mist: mistTheme,
+  light: lightTheme,
 };
 export function TerminalView({
   session,
@@ -95,7 +127,7 @@ export function TerminalView({
       fontSize: settings.fontSize,
       fontFamily: settings.fontFamily,
       scrollback: settings.scrollback,
-      theme: settings.theme === "dark" ? darkTheme : lightTheme,
+      theme: terminalThemes[settings.theme] ?? graphiteTheme,
       allowProposedApi: false,
       allowTransparency: false,
       convertEol: false,
@@ -257,7 +289,7 @@ export function TerminalView({
       term.current.options.fontFamily = settings.fontFamily;
       term.current.options.scrollback = settings.scrollback;
       term.current.options.theme =
-        settings.theme === "dark" ? darkTheme : lightTheme;
+        terminalThemes[settings.theme] ?? graphiteTheme;
       fit.current?.fit();
     }
   }, [settings]);

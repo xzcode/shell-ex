@@ -197,7 +197,7 @@ export default function RemoteEditor({
             language={language(targetPath)}
             value={text}
             theme={
-              document.documentElement.dataset.theme === "light"
+              ["light", "mist"].includes(document.documentElement.dataset.theme || "")
                 ? "vs"
                 : "vs-dark"
             }
