@@ -137,6 +137,7 @@ export default function App() {
   const initialized = useRef(false);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const reconnecting = useRef(new Set<string>());
+  const reconnectControllers = useRef(new Map<string, AbortController>());
   const reconnectAttempts = useRef(new Map<string, number>());
   const active = sessions.find((s) => s.id === activeId) || null;
   const notify: Notify = useCallback((message, kind = "info") => {
@@ -253,8 +254,16 @@ export default function App() {
         setSessions((list) => [...list]);
       });
   }
-  async function connectHost(host: Host, automatic = false): Promise<boolean> {
+  async function connectHost(
+    host: Host,
+    automatic = false,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
     let secret: SecretInput | null = null;
+    let stopListening: (() => void) | undefined;
+    // A reconnect belongs to its source tab, including a native call already in flight.
+    const cancelled = () => automatic && !!signal?.aborted;
+    if (cancelled()) return false;
     if (connectionLock.current) {
       if (!automatic) notify("请先完成当前连接的身份核验。", "info");
       return false;
@@ -287,6 +296,7 @@ export default function App() {
       )
         throw new Error("请先连接并验证此主机配置的跳板机，再连接目标服务器。");
       const info = await api<HostKeyInfo>("ssh_probe", { hostId: host.id });
+      if (cancelled()) return false;
       if (!info.trusted) {
         if (automatic)
           throw new Error("主机指纹需要手动核验，已暂停自动重连。");
@@ -303,6 +313,7 @@ export default function App() {
           if (automatic) throw e;
           notify("系统凭据库暂不可用，将使用本次连接的临时凭据。", "info");
         }
+        if (cancelled()) return false;
         if (!saved) {
           if (automatic) throw new Error("没有已保存的凭据，请手动重新连接。");
           secret = await new Promise<SecretInput | null>((resolve) =>
@@ -311,8 +322,33 @@ export default function App() {
           if (!secret) return false;
         }
       }
+      if (cancelled()) return false;
       const onEventChannel = new Channel<TerminalEvent>();
-      onEventChannel.onmessage = onEvent;
+      const challenges = new Set<string>();
+      const cancelChallenges = () => {
+        for (const requestId of challenges)
+          void api("ssh_auth_respond", { requestId, responses: [] }).catch(
+            () => {},
+          );
+        setAuthRequests((list) =>
+          list.filter((request) => !challenges.has(request.requestId)),
+        );
+      };
+      if (automatic && signal) {
+        signal.addEventListener("abort", cancelChallenges, { once: true });
+        stopListening = () =>
+          signal.removeEventListener("abort", cancelChallenges);
+      }
+      onEventChannel.onmessage = (event) => {
+        if (automatic && event.type === "auth") {
+          challenges.add(event.requestId);
+          if (cancelled()) {
+            cancelChallenges();
+            return;
+          }
+        }
+        onEvent(event);
+      };
       const id = await api<string>("ssh_connect", {
         hostId: host.id,
         secret,
@@ -321,6 +357,33 @@ export default function App() {
       if (secret) {
         secret.password = null;
         secret.passphrase = null;
+      }
+      if (cancelled()) {
+        try {
+          await api("session_close", { sessionId: id, local: false });
+          forgetTerminal(id);
+          statusRef.current.delete(id);
+        } catch (error) {
+          const message = `自动重连已取消，但新会话未能关闭：${errorText(error)}。请关闭此会话重试。`;
+          // Keep an actionable recovery tab, without restarting the cancelled connection.
+          reconnecting.current.add(id);
+          setSessions((list) => [
+            ...list,
+            {
+              id,
+              hostId: host.id,
+              name: host.name,
+              local: false,
+              status: "error",
+              error: message,
+              terminalFailure: message,
+              connectedAt: Date.now(),
+            },
+          ]);
+          if (!hasDirtyDrafts()) setActiveId(id);
+          notify(message, "error");
+        }
+        return false;
       }
       const pending = statusRef.current.get(id);
       setSessions((list) => [
@@ -346,9 +409,10 @@ export default function App() {
       notify(`已连接 ${host.name}。`, "success");
       return true;
     } catch (e) {
-      notify(errorText(e), "error");
+      if (!cancelled()) notify(errorText(e), "error");
       return false;
     } finally {
+      stopListening?.();
       connectionLock.current = false;
       if (secret) {
         secret.password = null;
@@ -423,10 +487,12 @@ export default function App() {
     )
       return;
     closingSessions.current.add(session.id);
+    reconnectControllers.current.get(session.id)?.abort();
+    reconnectControllers.current.delete(session.id);
     const reconnectTimer = timers.current.get(session.id);
     if (reconnectTimer) clearTimeout(reconnectTimer);
     timers.current.delete(session.id);
-    reconnecting.current.delete(session.id);
+    reconnecting.current.add(session.id);
     setSessions((list) =>
       list.map((s) => (s.id === session.id ? { ...s, status: "closing" } : s)),
     );
@@ -476,8 +542,11 @@ export default function App() {
       const host = hosts.find((h) => h.id === s.hostId);
       if (!host) continue;
       reconnecting.current.add(s.id);
+      const controller = new AbortController();
+      reconnectControllers.current.set(s.id, controller);
       const attempt = async (count: number) => {
         if (
+          controller.signal.aborted ||
           !sessionRef.current.some((x) => x.id === s.id) ||
           closingSessions.current.has(s.id) ||
           hasDirtyDrafts()
@@ -486,19 +555,23 @@ export default function App() {
         const timer = setTimeout(async () => {
           timers.current.delete(s.id);
           if (
+            controller.signal.aborted ||
             !sessionRef.current.some((x) => x.id === s.id) ||
             closingSessions.current.has(s.id) ||
             hasDirtyDrafts()
           )
             return;
-          const ok = await connectHost(host, true);
+          const ok = await connectHost(host, true, controller.signal);
+          if (controller.signal.aborted) return;
           if (ok) {
+            reconnectControllers.current.delete(s.id);
             void api("session_close", { sessionId: s.id, local: false }).catch(
               () => {},
             );
             forgetTerminal(s.id);
             setSessions((list) => list.filter((x) => x.id !== s.id));
           } else if (count < 2) void attempt(count + 1);
+          else reconnectControllers.current.delete(s.id);
         }, [2000, 5000, 12000][count]);
         timers.current.set(s.id, timer);
       };
@@ -541,11 +614,20 @@ export default function App() {
     void import("@tauri-apps/api/window")
       .then(({ getCurrentWindow }) =>
         getCurrentWindow().onCloseRequested(async (event) => {
+          const cancelReconnects = () => {
+            for (const controller of reconnectControllers.current.values())
+              controller.abort();
+            reconnectControllers.current.clear();
+            for (const timer of timers.current.values()) clearTimeout(timer);
+            timers.current.clear();
+          };
           if (
             !hasDirtyDrafts() &&
             !sessionRef.current.some((s) => s.status === "connected")
-          )
+          ) {
+            cancelReconnects();
             return;
+          }
           event.preventDefault();
           if (
             await confirmAction(
@@ -555,10 +637,9 @@ export default function App() {
               "退出 Shell EX",
             )
           ) {
+            cancelReconnects();
             for (const session of sessionRef.current)
               closingSessions.current.add(session.id);
-            for (const timer of timers.current.values()) clearTimeout(timer);
-            timers.current.clear();
             setSessions((list) =>
               list.map((session) => ({ ...session, status: "closing" })),
             );
