@@ -58,6 +58,8 @@ export type FileEntry = {
   size: number;
   modified: number | null;
   permissions: number | null;
+  uid?: number | null;
+  gid?: number | null;
 };
 export type RemoteFile = {
   path: string;

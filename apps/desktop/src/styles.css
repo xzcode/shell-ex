@@ -2639,3 +2639,43 @@ select:not([multiple]) {
 }
 .field > select { height:36px; min-height:36px; }
 .field > textarea { min-height:94px; height:auto; padding:10px 12px; }
+
+/* Classic two-pane SFTP explorer, docked across the full workspace width. */
+.file-explorer { display:flex; min-height:0; flex:1; overflow:hidden; }
+.directory-tree {
+  flex:0 0 clamp(158px, 22%, 305px); min-width:0;
+  border-right:1px solid var(--border); padding:5px 3px 8px 2px;
+  overflow:auto; user-select:none;
+}
+.folder-tree-row {
+  display:flex; align-items:center; gap:5px; height:25px;
+  border-radius:3px; font-size:11px; color:var(--secondary);
+  white-space:nowrap; cursor:pointer; padding-right:7px;
+}
+.folder-tree-row:hover { background:var(--hover); color:var(--text); }
+.folder-tree-row.selected { background:var(--selected); color:var(--text); }
+.folder-tree-row > button {
+  width:17px; height:19px; display:inline-flex; align-items:center; justify-content:center;
+  flex-shrink:0; color:var(--muted); padding:0;
+}
+.folder-tree-row > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.folder-tree-row .folder-icon { flex-shrink:0; }
+.folder-tree-loading,.folder-tree-error {
+  display:flex; align-items:center; gap:5px; padding:6px 12px;
+  font-size:10px; color:var(--muted);
+}
+.folder-tree-error { color:var(--red); }
+.folder-tree-error button { text-decoration:underline; }
+.file-explorer .file-list { min-width:0; flex:1; overflow:auto; }
+.file-explorer table { min-width:770px; }
+.file-explorer td,.file-explorer th { padding:5px 10px; }
+.file-explorer tbody tr:nth-child(even) { background:var(--panel-alt); }
+.file-explorer tbody tr:hover { background:var(--hover); }
+.file-explorer tbody tr.selected { background:var(--selected); }
+.file-explorer .file-name span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.file-explorer .file-name { min-width:180px; max-width:380px; }
+.file-explorer .folder-icon { color:var(--accent); fill:color-mix(in srgb,var(--accent) 13%,transparent); }
+@media (max-width:1120px) {
+  .directory-tree { flex-basis:160px; }
+  .file-explorer table { min-width:720px; }
+}

@@ -36,7 +36,19 @@ import {
   savePath,
 } from "./api";
 import { Busy, Empty, ErrorBox, Field, IconButton, Modal } from "./ui";
+import { DirectoryTree } from "./DirectoryTree";
 const EditorDialog = lazy(() => import("./RemoteEditor"));
+function permissionText(entry: FileEntry): string {
+  if (entry.permissions == null) return "—";
+  const mode = entry.permissions;
+  const flags = [0o400,0o200,0o100,0o040,0o020,0o010,0o004,0o002,0o001];
+  const chars = ["r","w","x","r","w","x","r","w","x"];
+  let suffix = flags.map((flag,i) => mode & flag ? chars[i] : "-");
+  if (mode & 0o4000) suffix[2] = mode & 0o100 ? "s" : "S";
+  if (mode & 0o2000) suffix[5] = mode & 0o010 ? "s" : "S";
+  if (mode & 0o1000) suffix[8] = mode & 0o001 ? "t" : "T";
+  return (entry.isSymlink ? "l" : entry.isDir ? "d" : "-") + suffix.join("");
+}
 export function FilePanel({
   session,
   notify,
@@ -59,7 +71,7 @@ export function FilePanel({
   } | null>(null);
   const [value, setValue] = useState("");
   const [working, setWorking] = useState(false);
-  const [showHidden, setShowHidden] = useState(false);
+  const [showHidden, setShowHidden] = useState(true);
   const [filter, setFilter] = useState("");
   const [directoryPlan, setDirectoryPlan] = useState<{
     id: string;
@@ -453,7 +465,10 @@ export function FilePanel({
         </IconButton>
       </div>
       {error && <ErrorBox message={error} retry={() => void load()} />}
-      <div className="file-list scroll-area">
+      <div className="file-explorer">
+        <DirectoryTree key={remote.id} sessionId={remote.id} currentPath={path}
+          onNavigate={navigate} />
+        <div className="file-list scroll-area">
         <table>
           <thead>
             <tr>
@@ -474,10 +489,12 @@ export function FilePanel({
                   }
                 />
               </th>
-              <th>名称</th>
+              <th>文件名</th>
               <th>大小</th>
-              <th>权限</th>
+              <th>类型</th>
               <th>修改时间</th>
+              <th>权限</th>
+              <th>用户/用户组</th>
             </tr>
           </thead>
           <tbody>
@@ -520,20 +537,18 @@ export function FilePanel({
                   <span>{entry.name}</span>
                 </td>
                 <td>{entry.isDir ? "—" : bytes(entry.size)}</td>
-                <td className="mono">
-                  {entry.permissions === null
-                    ? "—"
-                    : (entry.permissions & 0o7777).toString(8)}
-                </td>
+                <td>{entry.isSymlink ? "符号链接" : entry.isDir ? "文件夹" : "文件"}</td>
                 <td>
                   {entry.modified
                     ? new Date(entry.modified * 1000).toLocaleString("zh-CN", {
-                        month: "2-digit",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
+                        year: "numeric", month: "2-digit", day: "2-digit",
+                        hour: "2-digit", minute: "2-digit",
                       })
                     : "—"}
+                </td>
+                <td className="mono">{permissionText(entry)}</td>
+                <td className="mono">
+                  {entry.uid == null || entry.gid == null ? "—" : `${entry.uid}/${entry.gid}`}
                 </td>
               </tr>
             ))}
@@ -542,6 +557,7 @@ export function FilePanel({
         {!loading && !error && !filtered.length && (
           <div className="table-empty">此目录没有可显示的文件</div>
         )}
+        </div>
       </div>
       <div className="panel-foot">
         <span>
