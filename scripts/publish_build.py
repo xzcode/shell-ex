@@ -45,7 +45,7 @@ def draft_release(repo, sha, temp):
             "does not have an Authenticode certificate. Automatic updates are disabled "
             "until the release signing key and HTTPS manifest are configured.\n\n"
             f"[Build and verification runs](https://github.com/{repo}/actions?query=branch%3Amaster)\n\n"
-            f"[Feature and verification status](https://github.com/{repo}/blob/{sha}/docs/milestones/STATUS.md)\n",
+            f"[Current handoff and verification status](https://github.com/{repo}/blob/master/docs/milestones/STATUS.md)\n",
             encoding="utf-8",
         )
         created = gh(
