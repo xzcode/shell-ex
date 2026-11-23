@@ -10,7 +10,7 @@
 | Windows x64 | windows-latest / x86_64-pc-windows-msvc | NSIS `.exe` |
 | Linux x64 | ubuntu-24.04 / x86_64-unknown-linux-gnu | `.deb` |
 
-在 GitHub → Actions → Desktop packages → 对应运行摘要的 **Download build draft** 下载，或进入仓库 Releases 找到 `build-提交前12位` 草稿。每个平台同时提供 SHA-256 校验文件、来源提交和工作流记录。草稿保持未发布状态，需要仓库相应权限才能访问。
+开发构建可在 GitHub → Actions → Desktop packages → 对应运行摘要的 **Download build draft** 下载，或进入仓库 Releases 找到 `build-提交前12位` 草稿。每个平台同时提供 SHA-256 校验文件、来源提交和工作流记录。这条自动流程默认保留草稿，正式发布独立执行；普通 master 构建不会自动发布正式版，也不会覆盖已发布版本。下载需要仓库相应权限。本次正式发行见 [v0.1.0](https://github.com/xzcode/shell-ex/releases/tag/v0.1.0) 与 [版本说明](releases/v0.1.0.md)。
 
 2026-11-23 首轮 macOS 原生构建和 DMG 已成功生成，但账户 Actions artifact 存储配额耗尽，阻止附件上传。发行流程因此采用 GitHub Release 资产存储；不删除其他项目产物、不调整账户付费设置。不同平台独立构建并添加到同一来源提交的草稿，故下载前需确认所选平台任务已成功。文件名包含运行编号及重试序号，重复运行保留既有文件，不替换安装包或修改已发布发行版。
 
@@ -20,13 +20,15 @@
 
 ## 本次构建结果
 
-来源提交：`7c5b2e547dabb48de4d42cfd00ed4dde5181cf87`。对应 [构建草稿 build-7c5b2e547dab](https://github.com/xzcode/shell-ex/releases/tag/untagged-6d29ca13145ab69d76fb)，安装包来自已成功完成的 [Desktop packages 45173939358](https://github.com/xzcode/shell-ex/actions/runs/45173939358)。三个平台各自上传安装包、SHA-256 校验文件及 `build.json`，共 9 份平台资产；草稿仍保持未发布。文档后续更新不改变这些安装包的代码来源。
+来源提交：`7c5b2e547dabb48de4d42cfd00ed4dde5181cf87`。[正式 Release v0.1.0](https://github.com/xzcode/shell-ex/releases/tag/v0.1.0) 已发布并设为 Latest，非草稿、非预发布；Git 标签精确指向该来源提交。[正式发布作业 45182812179](https://github.com/xzcode/shell-ex/actions/runs/45182812179) 已成功，复用原有 12 份资产，资产 ID、大小和摘要保持不变。
+
+安装包来自已成功完成的 [Desktop packages 45173939358](https://github.com/xzcode/shell-ex/actions/runs/45173939358)。三个平台各自提供安装包、SHA-256 校验文件及 `build.json`，共 9 份平台资产；其余为界面验收资产。版本内容见 [v0.1.0 说明](releases/v0.1.0.md)。文档后续更新不改变这些安装包的代码来源。
 
 | 平台 | 安装包 | 当前结果 | 作业证据 |
 | --- | --- | --- | --- |
-| macOS Apple Silicon | `.dmg` | 构建与草稿上传成功 | [macOS 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212900) |
-| Windows x64 | NSIS `.exe` | 构建与草稿上传成功 | [Windows 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212384) |
-| Linux x64 | `.deb` | 构建与草稿上传成功，原生通道清理 2 项测试通过 | [Linux 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212872) |
+| macOS Apple Silicon | `.dmg` | 构建成功，已正式发布 | [macOS 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212900) |
+| Windows x64 | NSIS `.exe` | 构建成功，已正式发布 | [Windows 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212384) |
+| Linux x64 | `.deb` | 构建成功，已正式发布；原生通道清理 2 项测试通过 | [Linux 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212872) |
 
 已确认的安装包与大小：
 

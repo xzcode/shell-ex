@@ -6,9 +6,9 @@
 
 当前版本：`0.1.0`。macOS Apple Silicon 为首发平台，同时提供 Windows x64 和 Linux x64 构建。产品功能按 M0–M5 实现；各平台的实际验证结果与发布条件见 [交付状态](docs/milestones/STATUS.md)，不能用代码存在代替验收结果。
 
-**[下载安装包](https://github.com/xzcode/shell-ex/releases/tag/untagged-6d29ca13145ab69d76fb)** · [界面截图](docs/design/UI.md#本次实现的实际截图) · [安装与更新说明](docs/RELEASE.md)
+**[下载 v0.1.0 正式版](https://github.com/xzcode/shell-ex/releases/tag/v0.1.0)** · [版本说明](docs/releases/v0.1.0.md) · [界面截图](docs/design/UI.md#本次实现的实际截图) · [安装与更新说明](docs/RELEASE.md)
 
-本次安装包来源为 `7c5b2e547dabb48de4d42cfd00ed4dde5181cf87`，保存在对应的 Release 草稿中，包含 SHA-256 校验文件和构建来源记录。私有仓库的草稿需要相应访问权限。后续文档与截图提交不改变该构建的业务代码。
+本次安装包来源为 `7c5b2e547dabb48de4d42cfd00ed4dde5181cf87`，已随正式 Release `v0.1.0` 发布并设为 Latest，包含 SHA-256 校验文件和构建来源记录。下载仍需要此私有仓库的相应访问权限。正式版本复用已验收的安装包，后续文档与截图提交不改变该构建的业务代码。
 
 ![Shell EX 深色工作台](docs/design/images/workbench-dark.png)
 
@@ -63,7 +63,7 @@ rustup target add aarch64-apple-darwin
 npm run tauri -- build --target aarch64-apple-darwin --bundles app,dmg
 ```
 
-Windows 使用 `--bundles nsis`，Linux 使用 `--bundles deb`。GitHub 的 **Desktop packages** 工作流会分别构建三个平台，将安装包、SHA-256 校验文件与构建来源保存在仓库 **Releases** 中的 `build-提交前12位` 草稿；工作流摘要提供入口。当前 macOS 默认采用 ad-hoc 签名；开发者身份证书、公证与 Windows 代码签名是单独的正式分发条件，详见 [发行说明](docs/RELEASE.md)。
+Windows 使用 `--bundles nsis`，Linux 使用 `--bundles deb`。GitHub 的 **Desktop packages** 工作流会分别构建三个平台，默认将安装包、SHA-256 校验文件与构建来源保存在仓库 **Releases** 中的 `build-提交前12位` 草稿；工作流摘要提供入口。正式发布独立执行，普通 master 构建不会自动发布正式版，也不会覆盖已发布版本。当前 macOS 默认采用 ad-hoc 签名；开发者身份证书、公证与 Windows 代码签名需单独配置，详见 [发行说明](docs/RELEASE.md)。
 
 ## 必要验证
 
@@ -98,6 +98,7 @@ npm run build
 - [架构与技术决策](docs/architecture/ARCHITECTURE.md)
 - [安全与数据约定](docs/SECURITY.md)
 - [发行与升级](docs/RELEASE.md)
+- [v0.1.0 版本说明](docs/releases/v0.1.0.md)
 - [开发交接](docs/HANDOFF.md)
 - [M0–M5 状态和验证](docs/milestones/STATUS.md)
 

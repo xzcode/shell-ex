@@ -26,11 +26,13 @@
 
 本次交付的构建来源为 `7c5b2e547dabb48de4d42cfd00ed4dde5181cf87`，已包含终端 ACK 恢复及关闭自动重连链的补丁。[Verify 核心作业](https://github.com/xzcode/shell-ex/actions/runs/45173939448/job/137690213616) 的 26 项测试、[界面作业](https://github.com/xzcode/shell-ex/actions/runs/45173939448/job/137690213209) 的 2 项 Playwright 测试，以及 [Linux 原生通道清理作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212872) 的 2 项测试均通过，合计 **30 项**。
 
-[Verify 45173939448](https://github.com/xzcode/shell-ex/actions/runs/45173939448) 与 [Desktop packages 45173939358](https://github.com/xzcode/shell-ex/actions/runs/45173939358) 均成功完成。macOS Apple Silicon、Windows x64 和 Linux x64 的安装包、SHA-256 文件及构建记录已上传至 [本次构建草稿](https://github.com/xzcode/shell-ex/releases/tag/untagged-6d29ca13145ab69d76fb)。完整状态与校验值分别记录在 [状态表](milestones/STATUS.md) 和 [发行说明](RELEASE.md)。后续文档和截图继续按各自产物的来源提交记录。三平台构建通过不代替用户设备上的安装、系统凭据库与交互体验验收。
+[Verify 45173939448](https://github.com/xzcode/shell-ex/actions/runs/45173939448) 与 [Desktop packages 45173939358](https://github.com/xzcode/shell-ex/actions/runs/45173939358) 均成功完成。macOS Apple Silicon、Windows x64 和 Linux x64 的安装包、SHA-256 文件及构建记录已随 [正式 Release v0.1.0](https://github.com/xzcode/shell-ex/releases/tag/v0.1.0) 发布。[发布作业 45182812179](https://github.com/xzcode/shell-ex/actions/runs/45182812179) 成功，Release 为非草稿、非预发布并设为 Latest；标签指向上文来源提交，原有 12 份资产的 ID、大小和摘要保持不变。
+
+版本内容见 [v0.1.0 说明](releases/v0.1.0.md)，完整状态与校验值分别记录在 [状态表](milestones/STATUS.md) 和 [发行说明](RELEASE.md)。后续文档和截图继续按各自产物的来源提交记录。三平台构建通过不代替用户设备上的安装、系统凭据库与交互体验验收。
 
 本地沙箱限制 Unix socket，不能启动 Chromium 或 SSH Agent；非 root OpenSSH 不能写登录记录。GitHub Linux CI 已补齐真实 OpenSSH PTY、Agent、SFTP/转发和 Docker daemon 的实际验证，共 26 项通过。对应日志与来源提交保存在状态和各模块证据文档中。
 
-首轮安装包上传遇到账户 Actions artifact 配额耗尽，已使用 `scripts/publish_build.py` 保存到按提交区分的 Release 草稿；每个文件包含运行编号和重试序号，既有产物不被覆盖。构建不自动发布草稿。浏览器测试使用保留测试地址，不建立 SSH；截图与报告独立保存。
+开发构建使用 `scripts/publish_build.py` 保存到按提交区分的 Release 草稿；每个文件包含运行编号和重试序号，既有产物不被覆盖。普通 master 构建不自动发布正式版，正式发布独立执行；普通构建也不能覆盖已发布版本。浏览器测试使用保留测试地址，不建立 SSH；截图与报告独立保存。
 
 ## 终端传递与关闭语义
 

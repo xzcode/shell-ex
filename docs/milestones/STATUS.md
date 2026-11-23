@@ -44,13 +44,15 @@
 
 ## 三平台安装包
 
-三平台原生安装包采用独立任务构建，均已成功上传。每个平台提供安装包、SHA-256 文件及 `build.json`，共 9 份平台资产。因账户 Actions artifact 配额已满，安装包保存为 [构建草稿 build-7c5b2e547dab](https://github.com/xzcode/shell-ex/releases/tag/untagged-6d29ca13145ab69d76fb)。以下结果来自同一来源提交的 [Desktop packages 45173939358](https://github.com/xzcode/shell-ex/actions/runs/45173939358)，文档提交本身不改变安装包代码。具体文件名、大小和校验值见 [发行说明](../RELEASE.md#本次构建结果)。
+三平台原生安装包采用独立任务构建，均已随 [正式 Release v0.1.0](https://github.com/xzcode/shell-ex/releases/tag/v0.1.0) 发布。每个平台提供安装包、SHA-256 文件及 `build.json`，共 9 份平台资产。[发布作业 45182812179](https://github.com/xzcode/shell-ex/actions/runs/45182812179) 成功，Release 为非草稿、非预发布并设为 Latest；Git 标签精确指向本次来源提交，原有 12 份资产的 ID、大小和摘要保持不变。
+
+以下构建结果来自同一来源提交的 [Desktop packages 45173939358](https://github.com/xzcode/shell-ex/actions/runs/45173939358)，文档提交本身不改变安装包代码。具体文件名、大小和校验值见 [发行说明](../RELEASE.md#本次构建结果)，版本内容见 [v0.1.0 说明](../releases/v0.1.0.md)。普通 master 构建仍默认生成开发草稿，不自动正式发布，也不覆盖已发布版本。
 
 | 平台 | 安装包 | 当前结果 | 作业证据 |
 | --- | --- | --- | --- |
-| macOS Apple Silicon | `.dmg` | 构建与草稿上传成功；ad-hoc 签名，未公证 | [macOS 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212900) |
-| Windows x64 | NSIS `.exe` | 构建与草稿上传成功；未做 Authenticode 签名 | [Windows 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212384) |
-| Linux x64 | `.deb` | 构建与草稿上传成功，原生通道清理 2 项测试通过 | [Linux 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212872) |
+| macOS Apple Silicon | `.dmg` | 构建成功，已正式发布；ad-hoc 签名，未公证 | [macOS 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212900) |
+| Windows x64 | NSIS `.exe` | 构建成功，已正式发布；未做 Authenticode 签名 | [Windows 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212384) |
+| Linux x64 | `.deb` | 构建成功，已正式发布；原生通道清理 2 项测试通过 | [Linux 作业](https://github.com/xzcode/shell-ex/actions/runs/45173939358/job/137690212872) |
 
 ## 终端恢复与关闭语义
 
