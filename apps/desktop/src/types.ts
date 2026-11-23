@@ -116,7 +116,7 @@ export type Tunnel = {
   targetPort?: number;
 };
 export type AppSettings = {
-  theme: "dark" | "light";
+  theme: "graphite" | "mist" | "aurora" | "light" | "dark";
   fontSize: number;
   fontFamily: string;
   scrollback: number;
@@ -145,7 +145,7 @@ export type Notify = (
   kind?: "success" | "error" | "info",
 ) => void;
 export const defaultSettings: AppSettings = {
-  theme: "dark",
+  theme: "graphite",
   fontSize: 13,
   fontFamily: "Menlo, Monaco, Consolas, monospace",
   scrollback: 10000,
@@ -158,7 +158,7 @@ export const defaultWorkspace: Workspace = {
   hostIds: [],
   activeHostId: null,
   sidebarWidth: 236,
-  filesHeight: 254,
+  filesHeight: 326,
   monitorVisible: true,
   filesVisible: true,
   split: "none",

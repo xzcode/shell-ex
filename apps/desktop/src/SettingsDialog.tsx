@@ -193,23 +193,24 @@ export function SettingsDialog({
               <h3>外观</h3>
               <p className="section-description">清晰、克制的专业工作空间。</p>
               <div className="theme-options">
-                {(["dark", "light"] as const).map((theme) => (
+                {([
+                  { id: "graphite", label: "石墨灰", hint: "柔和的专业深色" },
+                  { id: "mist", label: "雾光浅色", hint: "舒适的浅色界面" },
+                  { id: "aurora", label: "极光深色", hint: "青绿点缀的暗色" },
+                  { id: "light", label: "经典浅色", hint: "原版浅色配色" },
+                ] as const).map((theme) => (
                   <button
-                    className={`theme-card ${theme}${form.theme === theme ? " selected" : ""}`}
-                    key={theme}
-                    onClick={() => set("theme", theme)}
+                    className={`theme-card ${theme.id}${form.theme === theme.id || (form.theme === "dark" && theme.id === "graphite") ? " selected" : ""}`}
+                    key={theme.id}
+                    onClick={() => set("theme", theme.id)}
+                    aria-pressed={form.theme === theme.id || (form.theme === "dark" && theme.id === "graphite")}
                   >
                     <div className="theme-mini">
                       <span />
-                      <div>
-                        <i />
-                        <i />
-                        <i />
-                      </div>
+                      <div><i /><i /><i /></div>
                     </div>
-                    <strong>
-                      {theme === "dark" ? "午夜深色" : "清晨浅色"}
-                    </strong>
+                    <strong>{theme.label}</strong>
+                    <small>{theme.hint}</small>
                   </button>
                 ))}
               </div>
