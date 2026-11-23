@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Shell EX",
+  "version": "0.1.0",
+  "identifier": "com.xzcode.shell-ex",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{
+      "label": "main", "title": "Shell EX", "width": 1440, "height": 920,
+      "minWidth": 960, "minHeight": 640, "backgroundColor": "#0e141c",
+      "decorations": true, "dragDropEnabled": true
+    }],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; font-src 'self' data:; connect-src ipc: http://ipc.localhost; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-src 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "SSH terminal, SFTP and server workspace",
+    "longDescription": "A local-first personal desktop workspace for SSH terminals, secure file transfers, Linux monitoring, tunnels and Docker.",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "macOS": { "minimumSystemVersion": "12.0", "signingIdentity": "-" },
+    "windows": { "nsis": { "displayLanguageSelector": true, "languages": ["SimpChinese", "English"] } },
+    "createUpdaterArtifacts": false
+  }
+}

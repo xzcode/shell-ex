@@ -1,0 +1,815 @@
+use base64::{engine::general_purpose::STANDARD, Engine};
+use serde::Serialize;
+use shell_ex_core::{
+    backup,
+    credentials::{CredentialVault, SystemVault},
+    docker::{ContainerInfo, DockerImage, DockerService},
+    error::{AppError, Result},
+    files::{EditorFile, FileEntry, FileService},
+    models::*,
+    monitor::{MonitorService, MonitorSnapshot},
+    pty::PtyManager,
+    ssh::SshManager,
+    storage::{Storage, TrustStatus},
+    transfers::{DirectoryPlan, DirectoryStartResult, Transfer, TransferManager},
+    tunnels::{TunnelInfo, TunnelManager},
+};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+use tauri::{ipc::Channel, Manager, State};
+use zeroize::Zeroizing;
+
+struct AppState {
+    store: Arc<Storage>,
+    vault: Arc<SystemVault>,
+    ssh: Arc<SshManager>,
+    pty: Arc<PtyManager>,
+    files: FileService,
+    transfers: TransferManager,
+    monitor: MonitorService,
+    docker: DockerService,
+    tunnels: TunnelManager,
+    probes: Mutex<HashMap<String, (String, u16, HostKeyInfo)>>,
+    mutation: Arc<Mutex<()>>,
+}
+impl AppState {
+    fn new(path: PathBuf) -> Result<Self> {
+        let store = Arc::new(Storage::open(&path.join("shell-ex.sqlite3"))?);
+        let ssh = Arc::new(SshManager::new());
+        Ok(Self {
+            transfers: TransferManager::new(
+                ssh.clone(),
+                store.settings()?.transfer_concurrency as usize,
+            ),
+            files: FileService::new(ssh.clone()),
+            monitor: MonitorService::new(ssh.clone()),
+            docker: DockerService::new(ssh.clone()),
+            tunnels: TunnelManager::new(ssh.clone()),
+            store,
+            vault: Arc::new(SystemVault),
+            ssh,
+            pty: Arc::new(PtyManager::new()),
+            probes: Mutex::new(HashMap::new()),
+            mutation: Arc::new(Mutex::new(())),
+        })
+    }
+    async fn jump_session(&self, host: &Host) -> Result<Option<String>> {
+        if let Some(jump) = &host.jump_host_id {
+            self.ssh.get_by_host(jump).await.map(Some).ok_or_else(|| {
+                AppError::new(
+                    "JUMP_NOT_CONNECTED",
+                    "请先连接已配置的跳板机，再连接此主机。",
+                )
+            })
+        } else {
+            Ok(None)
+        }
+    }
+    async fn probe_host(&self, host: &Host) -> Result<HostKeyInfo> {
+        match self.jump_session(host).await? {
+            Some(id) => self.ssh.probe_via(host, &id).await,
+            None => self.ssh.probe(host).await,
+        }
+    }
+}
+fn sink(channel: Channel<TerminalEvent>) -> EventSink {
+    Arc::new(move |event| {
+        let _ = channel.send(event);
+    })
+}
+fn join_error(e: tokio::task::JoinError) -> AppError {
+    AppError::new("TASK_FAILED", e.to_string())
+}
+
+#[tauri::command]
+fn hosts_list(state: State<'_, AppState>) -> Result<Vec<Host>> {
+    state.store.hosts()
+}
+#[tauri::command]
+async fn host_save(
+    state: State<'_, AppState>,
+    mut host: Host,
+    secret: Option<SecretInput>,
+    remember_secret: bool,
+) -> Result<Host> {
+    if host.id.is_empty() {
+        host.id = uuid::Uuid::new_v4().to_string();
+    }
+    shell_ex_core::storage::validate_host(&host)?;
+    let store = state.store.clone();
+    let vault = state.vault.clone();
+    let mutation = state.mutation.clone();
+    tokio::task::spawn_blocking(move || {
+        let _guard = mutation.lock().map_err(AppError::internal)?;
+        let has_secret = secret.as_ref().is_some_and(|s| {
+            s.password.as_ref().is_some_and(|p| !p.is_empty())
+                || s.passphrase.as_ref().is_some_and(|p| !p.is_empty())
+        });
+        let previous = if remember_secret && has_secret {
+            Some(vault.get(&host.id)?)
+        } else {
+            None
+        };
+        if remember_secret && has_secret {
+            if let Err(error) = vault.set(&host.id, secret.as_ref().unwrap()) {
+                let restored = match previous.as_ref().and_then(|p| p.as_ref()) {
+                    Some(old) => vault.set(&host.id, old),
+                    None => vault.delete(&host.id),
+                };
+                if restored.is_err() {
+                    return Err(AppError::new(
+                        "CREDENTIAL_ROLLBACK_FAILED",
+                        "系统凭据写入失败且无法确认恢复状态，请解锁凭据库后重新保存。",
+                    ));
+                }
+                return Err(error);
+            }
+        }
+        match store.save_host(host.clone()) {
+            Ok(host) => Ok(host),
+            Err(error) => {
+                if let Some(previous) = previous {
+                    let restored = match previous {
+                        Some(s) => vault.set(&host.id, &s),
+                        None => vault.delete(&host.id),
+                    };
+                    if restored.is_err() {
+                        return Err(AppError::new(
+                            "CREDENTIAL_ROLLBACK_FAILED",
+                            "保存主机失败，且旧凭据未能恢复。请解锁凭据库后重新保存。",
+                        ));
+                    }
+                }
+                Err(error)
+            }
+        }
+    })
+    .await
+    .map_err(join_error)?
+}
+#[tauri::command]
+async fn host_delete(state: State<'_, AppState>, id: String) -> Result<()> {
+    if state.ssh.get_by_host(&id).await.is_some() {
+        return Err(AppError::new("HOST_CONNECTED", "请先关闭该主机的连接"));
+    }
+    let store = state.store.clone();
+    let vault = state.vault.clone();
+    let mutation = state.mutation.clone();
+    tokio::task::spawn_blocking(move || {
+        let _guard = mutation.lock().map_err(AppError::internal)?;
+        let host = store.host(&id)?;
+        store.delete_host(&id)?;
+        if let Err(e) = vault.delete(&id) {
+            store.save_host(host)?;
+            return Err(e);
+        }
+        Ok(())
+    })
+    .await
+    .map_err(join_error)?
+}
+#[tauri::command]
+async fn host_secret_status(state: State<'_, AppState>, id: String) -> Result<bool> {
+    state.store.host(&id)?;
+    let vault = state.vault.clone();
+    tokio::task::spawn_blocking(move || vault.get(&id).map(|v| v.is_some()))
+        .await
+        .map_err(join_error)?
+}
+#[tauri::command]
+async fn host_secret_delete(state: State<'_, AppState>, id: String) -> Result<()> {
+    state.store.host(&id)?;
+    let vault = state.vault.clone();
+    let mutation = state.mutation.clone();
+    tokio::task::spawn_blocking(move || {
+        let _guard = mutation.lock().map_err(AppError::internal)?;
+        vault.delete(&id)
+    })
+    .await
+    .map_err(join_error)?
+}
+#[tauri::command]
+async fn ssh_probe(state: State<'_, AppState>, host_id: String) -> Result<TrustStatus> {
+    let host = state.store.host(&host_id)?;
+    let key = state.probe_host(&host).await?;
+    let status = state.store.trust_status(&host, key.clone())?;
+    state
+        .probes
+        .lock()
+        .map_err(AppError::internal)?
+        .insert(host_id, (host.address, host.port, key));
+    Ok(status)
+}
+#[tauri::command]
+fn ssh_trust(
+    state: State<'_, AppState>,
+    host_id: String,
+    algorithm: String,
+    fingerprint: String,
+    replace: bool,
+) -> Result<()> {
+    let host = state.store.host(&host_id)?;
+    let pending = state
+        .probes
+        .lock()
+        .map_err(AppError::internal)?
+        .get(&host_id)
+        .cloned()
+        .ok_or_else(|| AppError::new("PROBE_REQUIRED", "请先重新测试连接并核对指纹"))?;
+    if pending.0 != host.address
+        || pending.1 != host.port
+        || pending.2.algorithm != algorithm
+        || pending.2.fingerprint != fingerprint
+    {
+        return Err(AppError::new(
+            "PROBE_CHANGED",
+            "配置或指纹已变化，请重新测试连接",
+        ));
+    }
+    state.store.trust(&host, &algorithm, &fingerprint, replace)
+}
+#[tauri::command]
+async fn ssh_connect(
+    state: State<'_, AppState>,
+    host_id: String,
+    secret: Option<SecretInput>,
+    on_event: Channel<TerminalEvent>,
+) -> Result<String> {
+    let host = state.store.host(&host_id)?;
+    // Re-probe immediately; the authenticated transport independently pins this same fingerprint.
+    let key = state.probe_host(&host).await?;
+    let status = state.store.trust_status(&host, key.clone())?;
+    if !status.trusted {
+        return Err(AppError::new(
+            if status.changed {
+                "HOST_KEY_CHANGED"
+            } else {
+                "HOST_KEY_UNKNOWN"
+            },
+            "服务器指纹未受信任，请先核对主机身份。",
+        ));
+    }
+    let supplied = secret.is_some();
+    let secret = if supplied {
+        secret.unwrap_or_default()
+    } else if ["password", "key"].contains(&host.auth_method.as_str()) {
+        let vault = state.vault.clone();
+        let id = host_id.clone();
+        tokio::task::spawn_blocking(move || vault.get(&id))
+            .await
+            .map_err(join_error)??
+            .unwrap_or_default()
+    } else {
+        SecretInput::default()
+    };
+    let event_sink = sink(on_event);
+    match state.jump_session(&host).await? {
+        Some(jump) => {
+            state
+                .ssh
+                .connect_via(&host, secret, key.fingerprint, event_sink, &jump)
+                .await
+        }
+        None => {
+            state
+                .ssh
+                .connect(&host, secret, key.fingerprint, event_sink)
+                .await
+        }
+    }
+}
+#[tauri::command]
+async fn ssh_auth_respond(
+    state: State<'_, AppState>,
+    request_id: String,
+    responses: Vec<String>,
+) -> Result<()> {
+    state.ssh.auth_respond(&request_id, responses).await
+}
+#[tauri::command]
+async fn local_open(
+    state: State<'_, AppState>,
+    cwd: Option<String>,
+    cols: u16,
+    rows: u16,
+    on_event: Channel<TerminalEvent>,
+) -> Result<String> {
+    validate_size(cols as u32, rows as u32)?;
+    let manager = state.pty.clone();
+    tokio::task::spawn_blocking(move || manager.open(cwd, cols, rows, sink(on_event)))
+        .await
+        .map_err(join_error)?
+}
+fn validate_size(cols: u32, rows: u32) -> Result<()> {
+    if cols == 0 || rows == 0 || cols > 1000 || rows > 1000 {
+        Err(AppError::new("INVALID_SIZE", "终端大小无效"))
+    } else {
+        Ok(())
+    }
+}
+#[tauri::command]
+async fn terminal_write(
+    state: State<'_, AppState>,
+    session_id: String,
+    data: String,
+    local: bool,
+) -> Result<()> {
+    if data.len() > 128 * 1024 {
+        return Err(AppError::new("INPUT_TOO_LARGE", "请分批粘贴大文本"));
+    }
+    let bytes = Zeroizing::new(
+        STANDARD
+            .decode(data)
+            .map_err(|_| AppError::new("INVALID_INPUT", "终端输入编码无效"))?,
+    );
+    if local {
+        let manager = state.pty.clone();
+        tokio::task::spawn_blocking(move || manager.write(&session_id, &bytes))
+            .await
+            .map_err(join_error)?
+    } else {
+        state.ssh.write(&session_id, &bytes).await
+    }
+}
+#[tauri::command]
+async fn terminal_resize(
+    state: State<'_, AppState>,
+    session_id: String,
+    cols: u32,
+    rows: u32,
+    local: bool,
+) -> Result<()> {
+    validate_size(cols, rows)?;
+    if local {
+        state.pty.resize(&session_id, cols as u16, rows as u16)
+    } else {
+        state.ssh.resize(&session_id, cols, rows).await
+    }
+}
+#[tauri::command]
+async fn terminal_ack(
+    state: State<'_, AppState>,
+    session_id: String,
+    sequence: u64,
+    local: bool,
+) -> Result<()> {
+    if local {
+        state.pty.ack(&session_id, sequence)
+    } else {
+        state.ssh.ack(&session_id, sequence).await
+    }
+}
+#[tauri::command]
+async fn session_close(state: State<'_, AppState>, session_id: String, local: bool) -> Result<()> {
+    if local {
+        let manager = state.pty.clone();
+        tokio::task::spawn_blocking(move || manager.close(&session_id))
+            .await
+            .map_err(join_error)?
+    } else {
+        state.transfers.cancel_session(&session_id).await;
+        state.monitor.forget_session(&session_id).await;
+        state.tunnels.stop_session(&session_id).await;
+        state.ssh.disconnect(&session_id).await
+    }
+}
+#[tauri::command]
+async fn sftp_realpath(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+) -> Result<String> {
+    state.files.canonicalize(&session_id, &path).await
+}
+#[tauri::command]
+async fn sftp_list(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+) -> Result<Vec<FileEntry>> {
+    state.files.list(&session_id, &path).await
+}
+#[tauri::command]
+async fn sftp_mkdir(state: State<'_, AppState>, session_id: String, path: String) -> Result<()> {
+    state.files.mkdir(&session_id, &path).await
+}
+#[tauri::command]
+async fn sftp_rename(
+    state: State<'_, AppState>,
+    session_id: String,
+    from: String,
+    to: String,
+) -> Result<()> {
+    state.files.rename(&session_id, &from, &to).await
+}
+#[tauri::command]
+async fn sftp_remove(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+    is_dir: bool,
+) -> Result<()> {
+    state.files.remove(&session_id, &path, is_dir).await
+}
+#[tauri::command]
+async fn sftp_chmod(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+    mode: u32,
+) -> Result<()> {
+    state.files.chmod(&session_id, &path, mode).await
+}
+#[tauri::command]
+async fn file_read(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+) -> Result<EditorFile> {
+    state.files.read(&session_id, &path).await
+}
+#[tauri::command]
+async fn file_save(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+    text: String,
+    expected_version: String,
+) -> Result<EditorFile> {
+    state
+        .files
+        .save(&session_id, &path, &text, &expected_version)
+        .await
+}
+#[tauri::command]
+async fn transfer_start(
+    state: State<'_, AppState>,
+    session_id: String,
+    direction: String,
+    local_path: String,
+    remote_path: String,
+    overwrite: bool,
+) -> Result<Transfer> {
+    state
+        .transfers
+        .start(session_id, direction, local_path, remote_path, overwrite)
+        .await
+}
+#[tauri::command]
+async fn transfer_plan_directory(
+    state: State<'_, AppState>,
+    session_id: String,
+    direction: String,
+    local_root: String,
+    remote_root: String,
+) -> Result<DirectoryPlan> {
+    state
+        .transfers
+        .plan_directory(session_id, direction, local_root, remote_root)
+        .await
+}
+#[tauri::command]
+async fn transfer_start_directory(
+    state: State<'_, AppState>,
+    plan_id: String,
+    conflict: String,
+) -> Result<DirectoryStartResult> {
+    state.transfers.start_directory(&plan_id, &conflict).await
+}
+#[tauri::command]
+async fn transfers_list(state: State<'_, AppState>) -> Result<Vec<Transfer>> {
+    Ok(state.transfers.list().await)
+}
+#[tauri::command]
+async fn transfer_control(state: State<'_, AppState>, id: String, action: String) -> Result<()> {
+    state.transfers.control(&id, &action).await
+}
+#[tauri::command]
+async fn monitor_snapshot(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<MonitorSnapshot> {
+    state.monitor.snapshot(&session_id).await
+}
+#[tauri::command]
+async fn process_signal(
+    state: State<'_, AppState>,
+    session_id: String,
+    pid: u32,
+    signal: String,
+) -> Result<()> {
+    state
+        .monitor
+        .process_signal(&session_id, pid, &signal)
+        .await
+}
+#[tauri::command]
+async fn docker_list(state: State<'_, AppState>, session_id: String) -> Result<Vec<ContainerInfo>> {
+    state.docker.list(&session_id).await
+}
+#[tauri::command]
+async fn docker_images(state: State<'_, AppState>, session_id: String) -> Result<Vec<DockerImage>> {
+    state.docker.images(&session_id).await
+}
+#[tauri::command]
+async fn docker_action(
+    state: State<'_, AppState>,
+    session_id: String,
+    id: String,
+    action: String,
+) -> Result<()> {
+    state.docker.action(&session_id, &id, &action).await
+}
+#[tauri::command]
+async fn docker_logs(state: State<'_, AppState>, session_id: String, id: String) -> Result<String> {
+    state.docker.logs(&session_id, &id).await
+}
+#[tauri::command]
+async fn tunnel_start(
+    state: State<'_, AppState>,
+    session_id: String,
+    kind: String,
+    bind_host: String,
+    bind_port: u16,
+    target_host: Option<String>,
+    target_port: Option<u16>,
+) -> Result<TunnelInfo> {
+    state
+        .tunnels
+        .start(
+            &session_id,
+            &kind,
+            &bind_host,
+            bind_port,
+            target_host,
+            target_port,
+        )
+        .await
+}
+#[tauri::command]
+async fn tunnels_list(state: State<'_, AppState>) -> Result<Vec<TunnelInfo>> {
+    Ok(state.tunnels.list().await)
+}
+#[tauri::command]
+async fn tunnel_stop(state: State<'_, AppState>, id: String) -> Result<()> {
+    state.tunnels.stop(&id).await
+}
+#[tauri::command]
+fn settings_get(state: State<'_, AppState>) -> Result<AppSettings> {
+    state.store.settings()
+}
+#[tauri::command]
+async fn settings_save(state: State<'_, AppState>, settings: AppSettings) -> Result<AppSettings> {
+    let store = state.store.clone();
+    let mutation = state.mutation.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let _guard = mutation.lock().map_err(AppError::internal)?;
+        store.save_settings(&settings)?;
+        Ok(settings)
+    })
+    .await
+    .map_err(join_error)?;
+    if let Ok(settings) = &result {
+        state
+            .transfers
+            .set_concurrency(settings.transfer_concurrency as usize);
+    }
+    result
+}
+#[tauri::command]
+fn workspace_get(state: State<'_, AppState>) -> Result<Workspace> {
+    state.store.preference("workspace")
+}
+#[tauri::command]
+async fn workspace_save(state: State<'_, AppState>, workspace: Workspace) -> Result<Workspace> {
+    shell_ex_core::storage::validate_workspace(&workspace)?;
+    let store = state.store.clone();
+    let mutation = state.mutation.clone();
+    tokio::task::spawn_blocking(move || {
+        let _guard = mutation.lock().map_err(AppError::internal)?;
+        store.set_preference("workspace", &workspace)?;
+        Ok(workspace)
+    })
+    .await
+    .map_err(join_error)?
+}
+#[tauri::command]
+fn snippets_list(state: State<'_, AppState>) -> Result<Vec<Snippet>> {
+    state.store.snippets()
+}
+#[tauri::command]
+async fn snippet_save(state: State<'_, AppState>, snippet: Snippet) -> Result<Snippet> {
+    let store = state.store.clone();
+    let mutation = state.mutation.clone();
+    tokio::task::spawn_blocking(move || {
+        let _guard = mutation.lock().map_err(AppError::internal)?;
+        store.save_snippet(snippet)
+    })
+    .await
+    .map_err(join_error)?
+}
+#[tauri::command]
+async fn snippet_delete(state: State<'_, AppState>, id: String) -> Result<()> {
+    let store = state.store.clone();
+    let mutation = state.mutation.clone();
+    tokio::task::spawn_blocking(move || {
+        let _guard = mutation.lock().map_err(AppError::internal)?;
+        store.delete_snippet(&id)
+    })
+    .await
+    .map_err(join_error)?
+}
+#[tauri::command]
+fn ssh_config_import(text: String) -> Result<shell_ex_core::import::ImportPreview> {
+    shell_ex_core::import::parse(&text)
+}
+#[tauri::command]
+async fn hosts_import(state: State<'_, AppState>, hosts: Vec<Host>) -> Result<Vec<Host>> {
+    let store = state.store.clone();
+    let mutation = state.mutation.clone();
+    tokio::task::spawn_blocking(move || {
+        let _guard = mutation.lock().map_err(AppError::internal)?;
+        store.import_configuration(
+            &hosts,
+            &[],
+            &store.settings()?,
+            &store.preference::<Workspace>("workspace")?,
+        )?;
+        Ok(hosts)
+    })
+    .await
+    .map_err(join_error)?
+}
+fn backup_path(path: &str) -> Result<&Path> {
+    let path = Path::new(path);
+    if !path.is_absolute() || path.extension().is_none_or(|s| s != "shex") {
+        return Err(AppError::new(
+            "INVALID_BACKUP_PATH",
+            "请选择扩展名为 .shex 的绝对文件路径",
+        ));
+    }
+    Ok(path)
+}
+#[tauri::command]
+async fn backup_export(
+    state: State<'_, AppState>,
+    path: String,
+    passphrase: String,
+    include_credentials: bool,
+) -> Result<()> {
+    backup_path(&path)?;
+    let passphrase = Zeroizing::new(passphrase);
+    let store = state.store.clone();
+    let vault = state.vault.clone();
+    let mutation = state.mutation.clone();
+    tokio::task::spawn_blocking(move || {
+        let _guard = mutation.lock().map_err(AppError::internal)?;
+        backup::export(
+            &store,
+            &*vault,
+            Path::new(&path),
+            &passphrase,
+            include_credentials,
+        )
+    })
+    .await
+    .map_err(join_error)?
+}
+#[tauri::command]
+async fn backup_import(
+    state: State<'_, AppState>,
+    path: String,
+    passphrase: String,
+) -> Result<backup::ImportSummary> {
+    backup_path(&path)?;
+    let passphrase = Zeroizing::new(passphrase);
+    let store = state.store.clone();
+    let vault = state.vault.clone();
+    let mutation = state.mutation.clone();
+    tokio::task::spawn_blocking(move || {
+        let _guard = mutation.lock().map_err(AppError::internal)?;
+        backup::import(&store, &*vault, Path::new(&path), &passphrase)
+    })
+    .await
+    .map_err(join_error)?
+}
+#[derive(Serialize)]
+struct UpdateConfig {
+    configured: bool,
+    version: &'static str,
+    reason: Option<&'static str>,
+}
+#[tauri::command]
+fn update_config() -> UpdateConfig {
+    let configured = updater_settings().is_some();
+    UpdateConfig {
+        configured,
+        version: env!("CARGO_PKG_VERSION"),
+        reason: if configured {
+            None
+        } else {
+            Some("此构建未配置签名更新源。请从项目仓库获取经过核对的新安装包。")
+        },
+    }
+}
+fn updater_settings() -> Option<(&'static str, &'static str)> {
+    let key = option_env!("SHELL_EX_UPDATE_PUBKEY")?;
+    let endpoint = option_env!("SHELL_EX_UPDATE_ENDPOINT")?;
+    if key.trim().is_empty()
+        || !endpoint.starts_with("https://")
+        || tauri::Url::parse(endpoint).is_err()
+    {
+        return None;
+    }
+    Some((key, endpoint))
+}
+
+pub fn run() {
+    let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init());
+    let mut context = tauri::generate_context!();
+    if let Some((key, endpoint)) = updater_settings() {
+        context.config_mut().plugins.0.insert(
+            "updater".into(),
+            serde_json::json!({"pubkey":key,"endpoints":[endpoint],"requireSignedVersion":true}),
+        );
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().pubkey(key).build());
+    }
+    let app = builder
+        .setup(|app| {
+            let state = AppState::new(app.path().app_data_dir()?)?;
+            app.manage(state);
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            hosts_list,
+            host_save,
+            host_delete,
+            host_secret_status,
+            host_secret_delete,
+            ssh_probe,
+            ssh_trust,
+            ssh_connect,
+            ssh_auth_respond,
+            local_open,
+            terminal_write,
+            terminal_resize,
+            terminal_ack,
+            session_close,
+            sftp_realpath,
+            sftp_list,
+            sftp_mkdir,
+            sftp_rename,
+            sftp_remove,
+            sftp_chmod,
+            file_read,
+            file_save,
+            transfer_start,
+            transfer_plan_directory,
+            transfer_start_directory,
+            transfers_list,
+            transfer_control,
+            monitor_snapshot,
+            process_signal,
+            docker_list,
+            docker_images,
+            docker_action,
+            docker_logs,
+            tunnel_start,
+            tunnels_list,
+            tunnel_stop,
+            settings_get,
+            settings_save,
+            workspace_get,
+            workspace_save,
+            snippets_list,
+            snippet_save,
+            snippet_delete,
+            ssh_config_import,
+            hosts_import,
+            backup_export,
+            backup_import,
+            update_config,
+        ])
+        .build(context)
+        .expect("Shell EX could not initialize its local application data");
+    app.run(|handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            let state = handle.state::<AppState>();
+            state.pty.close_all();
+            tauri::async_runtime::block_on(async {
+                let _ = tokio::time::timeout(Duration::from_secs(4), async {
+                    state.transfers.cancel_all().await;
+                    state.tunnels.close_all().await;
+                    state.ssh.close_all().await;
+                })
+                .await;
+            });
+        }
+    });
+}

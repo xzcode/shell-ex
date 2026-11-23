@@ -1,0 +1,60 @@
+name: Verify
+on:
+  push:
+    branches: [master, 'codex/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  core-and-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Install isolated test server dependency
+        run: sudo apt-get update && sudo apt-get install -y openssh-server && sudo mkdir -p /run/sshd
+      - name: Format check
+        run: cargo fmt --all --check
+      - name: Core safety and behavior tests
+        run: cargo test --locked -p shell-ex-core --lib --test auth_protocol
+      - name: OpenSSH integration
+        env:
+          SHELL_EX_TEST_SSHD_SUDO: '1'
+          SHELL_EX_TEST_PTY: '1'
+        run: python3 scripts/ssh_fixture.py cargo test --locked -p shell-ex-core --test ssh_integration --test files_integration -- --ignored --test-threads=1
+      - name: Install UI dependencies
+        working-directory: apps/desktop
+        run: npm ci
+      - name: Build UI
+        working-directory: apps/desktop
+        run: npm run build
+
+      - name: Install browser for UI verification
+        working-directory: apps/desktop
+        run: npx playwright install --with-deps chromium
+      - name: Workbench interactions and visual captures
+        working-directory: apps/desktop
+        run: npm run test:ui
+      - name: UI screenshots and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shell-EX-UI-verification-${{ github.sha }}
+          path: |
+            apps/desktop/test-results/
+            apps/desktop/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 30

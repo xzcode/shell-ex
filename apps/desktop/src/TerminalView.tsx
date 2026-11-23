@@ -1,0 +1,273 @@
+import { useEffect, useRef, useState } from "react";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
+import { Search, X, ChevronUp, ChevronDown } from "lucide-react";
+import "@xterm/xterm/css/xterm.css";
+import type { TerminalEvent, AppSettings, Session, Notify } from "./types";
+import { api, confirmAction, errorText } from "./api";
+import { IconButton } from "./ui";
+import { sendTerminalInput } from "./terminalInput";
+const pending = new Map<string, TerminalEvent[]>();
+const sinks = new Map<string, (event: TerminalEvent) => void>();
+export function receiveTerminalEvent(event: TerminalEvent) {
+  const sink = sinks.get(event.sessionId);
+  if (sink) sink(event);
+  else {
+    const queue = pending.get(event.sessionId) || [];
+    queue.push(event);
+    pending.set(event.sessionId, queue);
+  }
+}
+export function forgetTerminal(id: string) {
+  sinks.delete(id);
+  pending.delete(id);
+}
+const darkTheme = {
+  background: "#0c1118",
+  foreground: "#cbd5e1",
+  cursor: "#91bdff",
+  selectionBackground: "#36557c80",
+  black: "#1d2734",
+  red: "#ee8792",
+  green: "#6dd5b0",
+  yellow: "#e6bd78",
+  blue: "#80b4f6",
+  magenta: "#c19af0",
+  cyan: "#71c8d1",
+  white: "#d7dfe9",
+  brightBlack: "#77869b",
+};
+const lightTheme = {
+  background: "#fbfcfe",
+  foreground: "#263547",
+  cursor: "#2868b6",
+  selectionBackground: "#acc9ed80",
+  black: "#263547",
+  red: "#b4374d",
+  green: "#237257",
+  yellow: "#926b17",
+  blue: "#2868b6",
+  magenta: "#8351ac",
+  cyan: "#287984",
+  white: "#dae2ed",
+  brightBlack: "#7d8ca1",
+};
+export function TerminalView({
+  session,
+  settings,
+  visible,
+  notify,
+}: {
+  session: Session;
+  settings: AppSettings;
+  visible: boolean;
+  notify: Notify;
+}) {
+  const container = useRef<HTMLDivElement>(null);
+  const term = useRef<Terminal | null>(null);
+  const fit = useRef<FitAddon | null>(null);
+  const search = useRef<SearchAddon | null>(null);
+  const current = useRef({ settings, notify });
+  current.current = { settings, notify };
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!container.current) return;
+    let disposed = false;
+    const t = new Terminal({
+      cursorBlink: true,
+      fontSize: settings.fontSize,
+      fontFamily: settings.fontFamily,
+      scrollback: settings.scrollback,
+      theme: settings.theme === "dark" ? darkTheme : lightTheme,
+      allowProposedApi: false,
+      allowTransparency: false,
+      convertEol: false,
+      rightClickSelectsWord: true,
+    });
+    const f = new FitAddon();
+    const s = new SearchAddon();
+    t.loadAddon(f);
+    t.loadAddon(s);
+    t.open(container.current);
+    term.current = t;
+    fit.current = f;
+    search.current = s;
+    const resize = () => {
+      if (
+        disposed ||
+        !container.current?.clientWidth ||
+        !container.current?.clientHeight
+      )
+        return;
+      f.fit();
+    };
+    const sizeEvent = t.onResize(({ cols, rows }) => {
+      void api("terminal_resize", {
+        sessionId: session.id,
+        cols,
+        rows,
+        local: session.local,
+      }).catch(() => {});
+    });
+    const observer = new ResizeObserver(resize);
+    observer.observe(container.current);
+    resize();
+    const consume = (event: TerminalEvent) => {
+      if (disposed) return;
+      if (
+        event.type === "exit" ||
+        (event.type === "state" &&
+          ["closed", "failed", "disconnected", "error"].includes(event.state))
+      )
+        t.options.disableStdin = true;
+      if (event.type === "data") {
+        const raw = atob(event.data);
+        const bytes = Uint8Array.from(raw, (c) => c.charCodeAt(0));
+        t.write(bytes, () => {
+          if (!disposed)
+            void api("terminal_ack", {
+              sessionId: session.id,
+              sequence: event.sequence,
+              local: session.local,
+            }).catch(() => {});
+        });
+      } else if (event.type === "exit") {
+        t.write(
+          `\r\n\x1b[90m[会话已结束${event.code == null ? "" : `，退出码 ${event.code}`}；重新连接会建立新会话]\x1b[0m\r\n`,
+        );
+      } else if (event.type === "state" && event.message) {
+        t.write(
+          `\r\n\x1b[90m[${event.message.replace(/[\x00-\x1f\x7f]/g, " ")}]\x1b[0m\r\n`,
+        );
+      }
+    };
+    sinks.set(session.id, consume);
+    for (const e of pending.get(session.id) || []) consume(e);
+    pending.delete(session.id);
+    const data = t.onData((value) => {
+      void sendTerminalInput(session.id, value, session.local).catch((e) =>
+        current.current.notify(errorText(e), "error"),
+      );
+    });
+    t.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown") return true;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        setSearching(true);
+        setTimeout(() => input.current?.focus(), 0);
+        return false;
+      }
+      if (
+        event.metaKey &&
+        event.key.toLowerCase() === "c" &&
+        t.hasSelection()
+      ) {
+        void navigator.clipboard.writeText(t.getSelection());
+        return false;
+      }
+      return true;
+    });
+    const paste = (event: ClipboardEvent) => {
+      const value = event.clipboardData?.getData("text");
+      if (!value) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (
+        current.current.settings.confirmMultilinePaste &&
+        /[\r\n]/.test(value)
+      ) {
+        void confirmAction(
+          `粘贴包含 ${value.split(/\r?\n/).length} 行内容，可能直接执行多条命令。\n\n${value.slice(0, 600)}${value.length > 600 ? "…" : ""}`,
+          "确认多行粘贴",
+        ).then((ok) => {
+          if (ok && !disposed) t.paste(value);
+        });
+      } else t.paste(value);
+    };
+    const element = container.current;
+    element.addEventListener("paste", paste, true);
+    // A remote OSC 52 sequence must never silently read or write the local clipboard.
+    const osc = t.parser.registerOscHandler(52, () => true);
+    return () => {
+      disposed = true;
+      observer.disconnect();
+      element.removeEventListener("paste", paste, true);
+      data.dispose();
+      sizeEvent.dispose();
+      osc.dispose();
+      sinks.delete(session.id);
+      t.dispose();
+    };
+    // Session identity is immutable; changing preferences is applied without clearing the buffer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.id]);
+  useEffect(() => {
+    if (term.current) {
+      term.current.options.fontSize = settings.fontSize;
+      term.current.options.fontFamily = settings.fontFamily;
+      term.current.options.scrollback = settings.scrollback;
+      term.current.options.theme =
+        settings.theme === "dark" ? darkTheme : lightTheme;
+      fit.current?.fit();
+    }
+  }, [settings]);
+  useEffect(() => {
+    if (visible) {
+      requestAnimationFrame(() => {
+        fit.current?.fit();
+        term.current?.focus();
+      });
+    }
+  }, [visible]);
+  return (
+    <div className={`terminal-view${visible ? " visible" : ""}`}>
+      <div ref={container} className="terminal-canvas" />
+      {searching && (
+        <div className="terminal-search">
+          <Search size={14} />
+          <input
+            ref={input}
+            value={query}
+            placeholder="在终端中查找"
+            onChange={(e) => {
+              setQuery(e.target.value);
+              search.current?.findNext(e.target.value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                if (e.shiftKey) search.current?.findPrevious(query);
+                else search.current?.findNext(query);
+              }
+              if (e.key === "Escape") {
+                setSearching(false);
+                term.current?.focus();
+              }
+            }}
+          />
+          <IconButton
+            title="上一个"
+            onClick={() => {
+              search.current?.findPrevious(query);
+            }}
+          >
+            <ChevronUp size={15} />
+          </IconButton>
+          <IconButton
+            title="下一个"
+            onClick={() => {
+              search.current?.findNext(query);
+            }}
+          >
+            <ChevronDown size={15} />
+          </IconButton>
+          <IconButton title="关闭搜索" onClick={() => setSearching(false)}>
+            <X size={15} />
+          </IconButton>
+        </div>
+      )}
+    </div>
+  );
+}
