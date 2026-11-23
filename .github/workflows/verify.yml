@@ -55,11 +55,12 @@ jobs:
         working-directory: apps/desktop
         run: npm run build
 
-      - name: Install browser for UI verification
-        working-directory: apps/desktop
-        run: npx playwright install --with-deps chromium
+      - name: Check runner Chrome for UI verification
+        run: google-chrome --version
       - name: Workbench interactions and visual captures
         working-directory: apps/desktop
+        env:
+          SHELL_EX_TEST_BROWSER_CHANNEL: chrome
         run: npm run test:ui
       - name: Record fixture screenshots in job evidence
         if: always()

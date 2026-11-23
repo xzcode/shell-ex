@@ -1,4 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
+
+// GitHub's Ubuntu 24.04 image already ships Chrome. CI can use that browser
+// without an additional browser/apt download; local runs keep bundled Chromium.
+const browserChannel = process.env.SHELL_EX_TEST_BROWSER_CHANNEL;
+if (browserChannel && browserChannel !== "chrome") {
+  throw new Error("SHELL_EX_TEST_BROWSER_CHANNEL must be chrome or unset");
+}
+
 export default defineConfig({
   testDir: "./tests",
   timeout: 45000,
@@ -15,9 +23,10 @@ export default defineConfig({
   },
   projects: [
     {
-      name: "chromium",
+      name: browserChannel || "chromium",
       use: {
         ...devices["Desktop Chrome"],
+        channel: browserChannel,
         viewport: { width: 1440, height: 900 },
       },
     },
