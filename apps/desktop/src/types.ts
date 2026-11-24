@@ -7,7 +7,7 @@ export type Host = {
   group: string;
   authMethod: "password" | "key" | "agent" | "interactive";
   /** Missing from older saved hosts means system Keychain. */
-  credentialStore?: "auto" | "local" | "system" | "session";
+  credentialStore?: "builtin" | "auto" | "local" | "system" | "session";
   privateKeyPath: string | null;
   proxy: { kind: "socks5" | "http"; host: string; port: number } | null;
   jumpHostId: string | null;
@@ -181,7 +181,7 @@ export const newHost = (): Host => ({
   username: "root",
   group: "默认分组",
   authMethod: "password",
-  credentialStore: "auto",
+  credentialStore: "builtin",
   privateKeyPath: null,
   proxy: null,
   jumpHostId: null,

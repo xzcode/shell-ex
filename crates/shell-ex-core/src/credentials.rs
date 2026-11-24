@@ -1,5 +1,6 @@
 use crate::{
     auto_vault::AutoVault,
+    builtin_vault::BuiltinVault,
     error::{AppError, Result},
     local_vault::LocalVault,
     models::{Host, SecretInput},
@@ -62,15 +63,22 @@ impl CredentialVault for SystemVault {
 pub struct RoutedVault {
     store: Arc<Storage>,
     local: Arc<LocalVault>,
-    automatic: Arc<AutoVault>,
+    automatic: Option<Arc<AutoVault>>,
+    builtin: Arc<BuiltinVault>,
     system: SystemVault,
 }
 impl RoutedVault {
-    pub fn new(store: Arc<Storage>, local: Arc<LocalVault>, automatic: Arc<AutoVault>) -> Self {
+    pub fn new(
+        store: Arc<Storage>,
+        local: Arc<LocalVault>,
+        automatic: Option<Arc<AutoVault>>,
+        builtin: Arc<BuiltinVault>,
+    ) -> Self {
         Self {
             store,
             local,
             automatic,
+            builtin,
             system: SystemVault,
         }
     }
@@ -85,7 +93,10 @@ impl RoutedVault {
     }
     pub fn get_by_mode(&self, id: &str, mode: &str) -> Result<Option<SecretInput>> {
         match mode {
-            "auto" => self.automatic.get(id),
+            "builtin" => self.builtin.get(id),
+            "auto" => self.automatic.as_ref()
+                .ok_or_else(|| AppError::new("LEGACY_AUTO_VAULT_MISSING", "旧版自动密码库不存在"))?
+                .get(id),
             "local" => self.local.get(id),
             "system" => self.system.get(id),
             "session" => Ok(None),
@@ -97,7 +108,10 @@ impl RoutedVault {
     }
     pub fn set_by_mode(&self, id: &str, mode: &str, secret: &SecretInput) -> Result<()> {
         match mode {
-            "auto" => self.automatic.set(id, secret),
+            "builtin" => self.builtin.set(id, secret),
+            "auto" => self.automatic.as_ref()
+                .ok_or_else(|| AppError::new("LEGACY_AUTO_VAULT_MISSING", "旧版自动密码库不存在"))?
+                .set(id, secret),
             "local" => self.local.set(id, secret),
             "system" => self.system.set(id, secret),
             "session" => Err(AppError::new(
@@ -112,7 +126,10 @@ impl RoutedVault {
     }
     pub fn delete_by_mode(&self, id: &str, mode: &str) -> Result<()> {
         match mode {
-            "auto" => self.automatic.delete(id),
+            "builtin" => self.builtin.delete(id),
+            "auto" => self.automatic.as_ref()
+                .ok_or_else(|| AppError::new("LEGACY_AUTO_VAULT_MISSING", "旧版自动密码库不存在"))?
+                .delete(id),
             "local" => self.local.delete(id),
             "system" => self.system.delete(id),
             "session" => Ok(()),
