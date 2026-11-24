@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { VaultDialog, type VaultStatus } from "./VaultDialog";
 import {
   Server,
   KeyRound,
@@ -31,7 +32,7 @@ export function HostDialog({
   const [tab, setTab] = useState("basic");
   const [password, setPassword] = useState("");
   const [passphrase, setPassphrase] = useState("");
-  const [remember, setRemember] = useState(false);
+  const [vaultPrompt, setVaultPrompt] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [probe, setProbe] = useState<HostKeyInfo | null>(null);
@@ -44,12 +45,21 @@ export function HostDialog({
     form.port > 0 &&
     form.port <= 65535 &&
     (form.authMethod !== "key" || form.privateKeyPath);
-  async function submit(connectTest = false) {
+  async function submit(connectTest = false, vaultReady = false) {
     if (!valid) {
       setError(
         "请填写名称、主机地址、用户名和有效端口；密钥认证还需要选择私钥。",
       );
       return;
+    }
+    const mode = form.credentialStore || (host ? "system" : "local");
+    const requiresVault = mode === "local" && native &&
+      (Boolean(password || passphrase) || (host && (host.credentialStore || "system") !== "local"));
+    if (requiresVault && !vaultReady) {
+      try {
+        const status = await api<VaultStatus>("vault_status");
+        if (!status.unlocked) { setVaultPrompt(connectTest); return; }
+      } catch (e) { setError(errorText(e)); return; }
     }
     setBusy(true);
     setError("");
@@ -64,9 +74,10 @@ export function HostDialog({
           name: form.name.trim(),
           address: form.address.trim(),
           username: form.username.trim(),
+          credentialStore: mode,
         },
-        secret: remember && native ? secret : null,
-        rememberSecret: remember && native,
+        secret: mode !== "session" && native ? secret : null,
+        rememberSecret: mode !== "session" && native,
       });
       setPassword("");
       setPassphrase("");
@@ -84,15 +95,16 @@ export function HostDialog({
     }
   }
   return (
+    <>
     <Modal
       title={host ? "编辑连接" : "新建 SSH 连接"}
-      subtitle="配置保存在本机，密码可选择保存到系统凭据库。"
+      subtitle="身份认证已合并至基本信息；SSH 密码可保存到 Shell EX 本地加密库。"
       onClose={onClose}
       wide
       footer={
         <>
           <span className="footer-note">
-            {native ? "本地存储 · 加密凭据" : "预览模式 · 不保存任何密码"}
+            {native ? "本地配置 · 可选加密凭据" : "预览模式 · 不保存任何密码"}
           </span>
           <button
             className="button secondary"
@@ -114,7 +126,6 @@ export function HostDialog({
       <div className="form-tabs">
         {[
           { id: "basic", label: "基础信息", icon: Server },
-          { id: "auth", label: "身份认证", icon: KeyRound },
           { id: "network", label: "网络", icon: Network },
           { id: "advanced", label: "高级", icon: SlidersHorizontal },
         ].map((t) => (
@@ -130,6 +141,7 @@ export function HostDialog({
       </div>
       {error && <ErrorBox message={error} />}
       {tab === "basic" && (
+        <>
         <div className="form-grid">
           <Field label="连接名称" full>
             <input
@@ -208,9 +220,9 @@ export function HostDialog({
             />
           </Field>
         </div>
-      )}
-      {tab === "auth" && (
-        <div className="form-grid">
+        <section className="auth-settings">
+          <h4><KeyRound size={15} /> 身份认证</h4>
+          <div className="form-grid">
           <Field label="认证方式" full>
             <select
               value={form.authMethod}
@@ -299,20 +311,28 @@ export function HostDialog({
             </div>
           )}
           {(form.authMethod === "password" || form.authMethod === "key") && (
-            <div className="full">
-              <Toggle
-                label="保存到系统凭据库"
-                description={
-                  native
-                    ? "下次连接时自动读取；不写入主机配置或普通备份。"
-                    : "仅桌面应用可用，预览不会保存密码。"
-                }
-                checked={remember}
-                onChange={setRemember}
-              />
+            <div className="full credential-mode">
+              <Field label="密码保存位置" full>
+                <select value={form.credentialStore || (host ? "system" : "local")}
+                  onChange={(e) => set("credentialStore", e.target.value as "local" | "system" | "session")}>
+                  <option value="local">Shell EX 本地加密库（推荐）</option>
+                  <option value="system">系统凭据库（Keychain 等）</option>
+                  <option value="session">仅本次使用，不保存密码</option>
+                </select>
+              </Field>
+              <p className="credential-mode-hint">
+                {form.credentialStore === "session"
+                  ? "仅保存连接配置；下次连接时输入密码。原存储中的凭据会被清除。"
+                  : form.credentialStore === "system" || (!form.credentialStore && host)
+                    ? "沿用系统凭据库；切换保存位置时会先复制凭据，再移除旧副本。"
+                    : "通过主密码解锁应用内加密库。主密码不落盘，退出应用自动锁定。"}
+              </p>
+              {!native && <p className="credential-mode-hint">当前是浏览器预览，不会保存任何密码。</p>}
             </div>
           )}
-        </div>
+          </div>
+        </section>
+        </>
       )}
       {tab === "network" && (
         <div className="form-grid">
@@ -437,6 +457,14 @@ export function HostDialog({
         </div>
       )}
     </Modal>
+      {vaultPrompt !== null && (
+        <VaultDialog onClose={() => setVaultPrompt(null)} onReady={() => {
+          const tested = vaultPrompt;
+          setVaultPrompt(null);
+          void submit(tested, true);
+        }} />
+      )}
+    </>
   );
 }
 export function TrustDialog({
