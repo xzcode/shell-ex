@@ -137,4 +137,3 @@ impl CredentialVault for RoutedVault {
         self.delete_by_mode(&host.id, &host.credential_store)
     }
 }
-

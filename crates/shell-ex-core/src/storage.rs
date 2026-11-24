@@ -492,4 +492,3 @@ mod tests {
         assert!(store.hosts().unwrap().is_empty());
     }
 }
-
