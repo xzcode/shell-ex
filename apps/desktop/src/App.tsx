@@ -843,7 +843,7 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark">›_</span>
           <strong>Shell EX</strong>
-          <span className="version-tag">0.3.2</span>
+          <span className="version-tag">0.4.0</span>
         </div>
         <div className="header-actions">
           <IconButton

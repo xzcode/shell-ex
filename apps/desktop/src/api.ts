@@ -5,7 +5,7 @@ import type { Host, Snippet } from "./types";
 import { defaultSettings, defaultWorkspace } from "./types";
 export const native = isTauri();
 export function errorText(error: unknown): string {
-  if (typeof error === "string") return error;
+  if (typeof error === "string") return tr(error);
   if (error && typeof error === "object" && "message" in error)
     return tr(String(error.message));
   return tr("操作未完成，请重试。");

@@ -4,13 +4,40 @@ on:
     branches: [master]
     paths-ignore: ['docs/**', '**.md', 'LICENSE']
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish this exact master version as a formal release
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
   group: desktop-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
+  prepare:
+    if: github.repository == 'xzcode/shell-ex' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+      tag: ${{ steps.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Determine whether the version changed
+        id: plan
+        run: python3 scripts/release_desktop.py plan
+      - name: Create versioned release draft before building
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release_desktop.py prepare ${{ steps.plan.outputs.tag }}
   package:
+    needs: prepare
     permissions:
       contents: write
     strategy:
@@ -66,7 +93,48 @@ jobs:
           for package in target/${{ matrix.target }}/release/bundle/deb/*.deb; do
             dpkg-deb --field "$package" Package Version Architecture Depends
           done
-      - name: Save installers and checksums to build draft
+      - name: Verify native macOS signature and architecture
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apps=(target/aarch64-apple-darwin/release/bundle/macos/*.app)
+          test "${#apps[@]}" = 1
+          test -d "${apps[0]}"
+          binary_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${apps[0]}/Contents/Info.plist")"
+          test "$(lipo -archs "${apps[0]}/Contents/MacOS/$binary_name")" = arm64
+          codesign --verify --deep --strict "${apps[0]}"
+      - name: Stage native installer and checksums
+        run: python scripts/release_desktop.py stage ${{ matrix.name }}
+      - name: Preserve native installer independently
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: ${{ needs.prepare.outputs.tag }}-${{ matrix.name }}
+          path: release-out/*
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload to versioned release draft
+        if: needs.prepare.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/release_desktop.py upload ${{ needs.prepare.outputs.tag }}
+      - name: Save ordinary development build
+        if: needs.prepare.outputs.publish != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: python scripts/publish_build.py desktop --target ${{ matrix.target }} --platform ${{ matrix.name }}
+  publish:
+    needs: [prepare, package]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify all three platform assets and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release_desktop.py finalize ${{ needs.prepare.outputs.tag }}

@@ -1,4 +1,3 @@
-import { tr } from "./i18n";
 import { api } from "./api";
 
 const tails = new Map<string, Promise<void>>();
@@ -16,7 +15,7 @@ export function sendTerminalInput(
   const total = (queuedBytes.get(sessionId) || 0) + input.length;
   if (total > MAX_QUEUED_BYTES) {
     return Promise.reject(
-      new Error(tr("终端待发送内容超过 8 MB，请等待当前输入完成后分批粘贴。")),
+      new Error("终端待发送内容超过 8 MB，请等待当前输入完成后分批粘贴。"),
     );
   }
   queuedBytes.set(sessionId, total);

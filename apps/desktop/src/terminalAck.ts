@@ -1,4 +1,3 @@
-import { tr } from "./i18n";
 export type AckFailure = { sequence: number; attempts: number; cause: unknown };
 type Schedule = (callback: () => void, delayMs: number) => () => void;
 const STOPPED = Symbol("terminal-ack-stopped");
@@ -60,7 +59,7 @@ export class TerminalAckController {
       const cancel = () => finish(true, STOPPED);
       this.cancelPending = cancel;
       cancelTimer = this.schedule(
-        () => finish(true, new Error(tr("与桌面后端通信超时"))),
+        () => finish(true, new Error("与桌面后端通信超时")),
         5000,
       );
       // Attach both handlers even after timeout/cancellation so late rejection is consumed.
