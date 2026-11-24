@@ -6,9 +6,9 @@
 
 当前版本：`0.3.0`（本地加密密码库、连接编辑页简化，以及 v0.2 工作台增强）。macOS Apple Silicon 为首发平台，同时提供 Windows x64 和 Linux x64 构建。产品功能按 M0–M5 实现；各平台的实际验证结果与发布条件见 [交付状态](docs/milestones/STATUS.md)，不能用代码存在代替验收结果。
 
-**[下载 v0.3.0](https://github.com/xzcode/shell-ex/releases/tag/v0.3.0)** · [版本说明](docs/releases/v0.3.0.md) · [界面截图](docs/design/UI.md#v020-实际界面预览) · [安装与更新说明](docs/RELEASE.md)
+**[下载 v0.3.0 已验证构建草稿](https://github.com/xzcode/shell-ex/releases/tag/untagged-caa6163daf2a2574e4f6)** · [版本说明](docs/releases/v0.3.0.md) · [界面截图](docs/design/UI.md#v020-实际界面预览) · [安装与更新说明](docs/RELEASE.md)
 
-v0.2.0 业务代码来源为 `f7c4d61f0bbea30b2251f051484a1852f0388be4`，三平台安装包须与这一提交对应，并提供 SHA-256 校验文件和构建记录。私有仓库附件需要相应 GitHub 权限；[v0.1.0 旧版](https://github.com/xzcode/shell-ex/releases/tag/v0.1.0) 仍予保留。
+v0.3.0 构建来源为 `a247fc10f27466c781d8f9ed335e0063ecc62051`，三平台安装包和 SHA-256 校验值已经全部保存。**目前仍是 Draft**：正式发布作业在 GitHub Runner 分配之前连续失败，尚未创建 v0.3.0 Git 标签。请通过上面的构建草稿下载；[v0.1.0 正式旧版](https://github.com/xzcode/shell-ex/releases/tag/v0.1.0) 保留可回退。下载私有仓库附件需相应 GitHub 权限。
 
 ![Shell EX v0.2.0 石墨灰工作台](docs/design/images/workbench-v0.2-graphite.png)
 

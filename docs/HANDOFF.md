@@ -2,7 +2,7 @@
 
 ## 当前任务与决策
 
-用户已选择完整 FinalShell 替代品方向，并授权直接完成 M0–M5。仓库 `xzcode/shell-ex`，默认 master。当前实现版本 0.1.0；首发 macOS Apple Silicon，三平台构建。界面使用专业深浅主题、长方形按钮，代码和用户数据均不依赖云账号。
+用户已选择完整 FinalShell 替代品方向，并授权直接完成 M0–M5。仓库 `xzcode/shell-ex`，默认 master。当前实现版本 0.3.0；首发 macOS Apple Silicon，三平台构建。正式 Release 暂因 GitHub Runner 启动作业失败而未发布，文件已在构建草稿中。界面使用专业深浅主题、长方形按钮，代码和用户数据均不依赖云账号。
 
 ## 代码入口
 
@@ -59,3 +59,12 @@ ACK 无法恢复时，界面停止该终端输入、保留明确错误状态并�
 ## 明确未承诺
 
 自动更新尚需真实发行公钥/HTTPS 清单/签名包，开发者证书与公证需要发行者身份材料。队列跨应用重启续传、ACL/xattrs 复制、全部 OpenSSH 配置语法、代理认证、远程文件自动 sudo 和 MCP 集成不属于本版已经通过验收的能力。
+
+
+## v0.3.0 增量交接（2026-11-24）
+
+源提交 `a247fc10f27466c781d8f9ed335e0063ecc62051`；功能 PR [#2](https://github.com/xzcode/shell-ex/pull/2) 已合并，核心、UI 与原生检查通过；三平台打包成功，见 [构建状态](RELEASE.md#v030-当前构建与发布状态2026-11-24)。
+
+本地密码库：`crates/shell-ex-core/src/local_vault.rs` 实现 Argon2id/AES-256-GCM，`credentials.sqlite3` 在 Tauri app_data_dir。按主机选择 `local/system/session`，旧数据缺省 `system`；前端 `HostDialog.tsx` 合并认证页，`VaultDialog.tsx` 提供主密码生命周期，`SettingsDialog.tsx` 可锁定、解锁及换密码，`App.tsx` 连接前按需提示解锁。安全边界见 [安全说明](SECURITY.md)。
+
+请不要把本版构建草稿标记成正式 Release；GitHub Actions 发布作业在 Runner 分配前失败，尚未创建 `v0.3.0` 标签，详情与三平台校验值见发行说明。已存在 `release/v0.3.0` 发布工作流，可在 Actions 服务恢复后重试，也可通过 GitHub UI 发布当前草稿。

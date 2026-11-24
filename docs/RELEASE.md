@@ -1,5 +1,19 @@
 # 构建、安装与签名更新
 
+## v0.3.0 当前构建与发布状态（2026-11-24）
+
+应用代码来源：`a247fc10f27466c781d8f9ed335e0063ecc62051`。本版新增本地加密密码库，并把身份认证并入基本信息，旧配置 `credentialStore` 缺省为系统凭据库。
+
+[Verify 45322075422](https://github.com/xzcode/shell-ex/actions/runs/45322075422) 与 [Desktop packages 45322075361](https://github.com/xzcode/shell-ex/actions/runs/45322075361) 均成功。macOS Apple Silicon DMG、Windows x64 EXE、Linux x64 DEB、逐平台 SHA-256、build.json 和 UI 验收报告共 **12 个附件**，均保存在 [v0.3.0 已验收构建草稿](https://github.com/xzcode/shell-ex/releases/tag/untagged-caa6163daf2a2574e4f6)。当前 GitHub Release id `456283740`，tag 暂为 `build-a247fc10f274`，`draft=true`。不能把草稿写成正式 Release。
+
+| 平台 | 文件 | SHA-256 |
+| --- | --- | --- |
+| macOS Apple Silicon | `Shell-EX_0.3.0_aarch64-r45322075361.1.dmg` | `62e85c07cf0baf8646ba378f460879231b66a59c77e07320dc4c871e04daacda` |
+| Windows x64 | `Shell-EX_0.3.0_x64-setup-r45322075361.1.exe` | `3485ca33473b41ed83dbc55f6bb92f7c5506d7a19f8476f7b1becccee62a2221` |
+| Linux x64 | `Shell-EX_0.3.0_amd64-r45322075361.1.deb` | `3920d1c8f6f7d5b6d6708dabda547c7e4ed484d8be7a01bc3ba892185be05fc5` |
+
+正式发布自动化位于 `release/v0.3.0` 分支 `.github/workflows/publish-v0.3.0.yml`。该作业在获得 Runner 前即结束（`runner_id=0`、`steps=[]`、无日志）；更换 `ubuntu-24.04` 与 `ubuntu-latest`、重复运行均未解决。可能涉及 Actions 限额/权限或 GitHub Runner 分配问题，具体原因尚未确认。[失败作业](https://github.com/xzcode/shell-ex/actions/runs/45323404699)。恢复后可重新执行发布工作流；或在 GitHub Releases 编辑现有草稿，设置 `v0.3.0` 标签（目标提交 `a247fc1`），使用 [v0.3.0 版本说明](releases/v0.3.0.md)，选择 Publish release。不重新上传、更换或覆盖已验收的 12 个附件。
+
 ## 自动构建
 
 `.github/workflows/desktop.yml` 在 master 代码推送或手动触发时构建：
