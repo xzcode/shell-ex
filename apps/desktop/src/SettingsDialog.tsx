@@ -325,10 +325,10 @@ export function SettingsDialog({
               <h3>安全与凭据</h3>
               <div className="info-note">
                 <ShieldCheck size={20} />
-                <p>新连接默认自动加密保存 SSH 密码，无需设置主密码。加密密钥位于本机应用数据目录，主机配置不包含明文密码；已有旧版连接仍按原有方式读取。</p>
+                <p>新连接默认使用 Shell EX 内置 AES-256-GCM 加密保存 SSH 密码，无需设置主密码或生成密钥文件。主机配置不含明文密码；已有连接仍按原有方式读取。</p>
               </div>
-              <h4>默认：应用内自动加密</h4>
-              <p className="section-description">新建连接后会自动生成安装专属随机密钥，使用 AES-256-GCM 加密保存。无需解锁。注意：若其他人能同时读取本机密钥文件与加密库，也能还原密码；请保护设备登录账户和磁盘。</p>
+              <h4>默认：内置 AES 加密保存</h4>
+              <p className="section-description">默认保存方式不需要额外操作。程序内置统一加密密钥，每条记录使用随机 nonce；具备程序副本和加密数据库的人仍可能还原密码，请保护电脑登录账户与应用数据。</p>
               {vaultStatus?.initialized && <h4>旧版主密码库（兼容）</h4>}
               {vaultStatus?.initialized && <>
               <div className="settings-list">
