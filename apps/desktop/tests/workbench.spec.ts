@@ -34,14 +34,15 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
     fullPage: true,
   });
   await expect(hostDialog.getByRole("button", { name: "身份认证", exact: true })).toHaveCount(0);
-  await expect(hostDialog.getByLabel("密码保存位置")).toHaveValue("local");
+  await expect(hostDialog.getByLabel("密码保存位置")).toHaveValue("auto");
+  await expect(hostDialog.getByText(/无需主密码/)).toBeVisible();
   await hostDialog.getByLabel(/登录密码/).fill("PREVIEW-SECRET-DO-NOT-PERSIST");
   await hostDialog.getByRole("button", { name: "网络", exact: true }).click();
   const selectHeight = await hostDialog.getByLabel("代理类型").evaluate((element) => element.getBoundingClientRect().height);
   const inputHeight = await hostDialog.getByLabel("连接超时（秒）").evaluate((element) => element.getBoundingClientRect().height);
   expect(Math.abs(selectHeight - inputHeight)).toBeLessThanOrEqual(1);
   await hostDialog.getByRole("button", { name: "基础信息", exact: true }).click();
-  await expect(hostDialog.getByLabel("密码保存位置")).toHaveValue("local");
+  await expect(hostDialog.getByLabel("密码保存位置")).toHaveValue("auto");
   await expect(
     hostDialog.getByRole("button", { name: "保存并测试握手" }),
   ).toBeDisabled();
