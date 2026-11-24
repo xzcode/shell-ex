@@ -1,3 +1,4 @@
+import { tr } from "./i18n";
 import { useEffect, useRef, type ReactNode } from "react";
 import { X, LoaderCircle, AlertCircle, Inbox } from "lucide-react";
 export function IconButton({
@@ -112,7 +113,7 @@ export function Modal({
             <h2>{title}</h2>
             {subtitle && <p>{subtitle}</p>}
           </div>
-          <IconButton title="关闭" onClick={onClose}>
+          <IconButton title={tr("关闭")} onClick={onClose}>
             <X size={18} />
           </IconButton>
         </header>
@@ -154,14 +155,12 @@ export function ErrorBox({
       <AlertCircle size={15} />
       <span>{message}</span>
       {retry && (
-        <button className="text-button" onClick={retry}>
-          重试
-        </button>
+        <button className="text-button" onClick={retry}>{tr("重试")}</button>
       )}
     </div>
   );
 }
-export function Busy({ text = "正在加载…" }: { text?: string }) {
+export function Busy({ text = tr("正在加载…") }: { text?: string }) {
   return (
     <span className="busy">
       <LoaderCircle size={15} className="spin" />

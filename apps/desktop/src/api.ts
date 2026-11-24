@@ -1,3 +1,4 @@
+import { tr } from "./i18n";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import type { Host, Snippet } from "./types";
@@ -6,8 +7,8 @@ export const native = isTauri();
 export function errorText(error: unknown): string {
   if (typeof error === "string") return error;
   if (error && typeof error === "object" && "message" in error)
-    return String(error.message);
-  return "操作未完成，请重试。";
+    return tr(String(error.message));
+  return tr("操作未完成，请重试。");
 }
 function stored<T>(name: string, fallback: T): T {
   try {
@@ -87,21 +88,21 @@ export async function api<T>(
       break;
     default:
       throw new Error(
-        "当前是界面预览。请在 Shell EX 桌面应用中执行连接、文件操作与系统功能。",
+        tr("当前是界面预览。请在 Shell EX 桌面应用中执行连接、文件操作与系统功能。"),
       );
   }
   return result as T;
 }
 export async function confirmAction(
   message: string,
-  title = "确认操作",
+  title = tr("确认操作"),
 ): Promise<boolean> {
   return native
     ? ask(message, {
         title,
         kind: "warning",
-        okLabel: "确认",
-        cancelLabel: "取消",
+        okLabel: tr("确认"),
+        cancelLabel: tr("取消"),
       })
     : window.confirm(`${title}\n\n${message}`);
 }
@@ -109,14 +110,14 @@ export async function chooseFile(options?: {
   directory?: boolean;
   multiple?: boolean;
 }): Promise<string | string[] | null> {
-  if (!native) throw new Error("选择本地文件需要 Shell EX 桌面应用。");
+  if (!native) throw new Error(tr("选择本地文件需要 Shell EX 桌面应用。"));
   return open({
     directory: options?.directory ?? false,
     multiple: options?.multiple ?? false,
   });
 }
 export async function savePath(defaultPath?: string): Promise<string | null> {
-  if (!native) throw new Error("保存文件需要 Shell EX 桌面应用。");
+  if (!native) throw new Error(tr("保存文件需要 Shell EX 桌面应用。"));
   return save({ defaultPath });
 }
 export function bytes(n: number): string {

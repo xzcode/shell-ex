@@ -1,3 +1,4 @@
+import { tr } from "./i18n";
 import { useCallback, useEffect, useState } from "react";
 import {
   ArrowDownToLine,
@@ -53,29 +54,28 @@ export function TransferPanel({ notify }: { notify: Notify }) {
     }
   }
   const labels: Record<string, string> = {
-    validating: "正在校验",
-    verifying: "校验完整性",
-    committing: "保存中",
-    pausing: "暂停中",
-    cancelling: "取消中",
-    queued: "等待中",
-    running: "传输中",
-    paused: "已暂停",
-    failed: "失败",
-    completed: "已完成",
-    cancelled: "已取消",
-    canceled: "已取消",
+    validating: tr("正在校验"),
+    verifying: tr("校验完整性"),
+    committing: tr("保存中"),
+    pausing: tr("暂停中"),
+    cancelling: tr("取消中"),
+    queued: tr("等待中"),
+    running: tr("传输中"),
+    paused: tr("已暂停"),
+    failed: tr("失败"),
+    completed: tr("已完成"),
+    cancelled: tr("已取消"),
+    canceled: tr("已取消"),
   };
   return (
     <div className="operation-panel">
       {error && <ErrorBox message={error} retry={() => void load()} />}
       <div className="panel-toolbar">
-        <span className="panel-context">
-          传输队列 <span className="count">{tasks.length}</span>
+        <span className="panel-context">{tr("传输队列")}{" "}<span className="count">{tasks.length}</span>
         </span>
         <span className="flex-spacer" />
-        <span className="muted">暂停后会验证已传输内容再续传</span>
-        <IconButton title="刷新传输队列" onClick={() => void load()}>
+        <span className="muted">{tr("暂停后会验证已传输内容再续传")}</span>
+        <IconButton title={tr("刷新传输队列")} onClick={() => void load()}>
           <RefreshCw size={14} />
         </IconButton>
       </div>
@@ -84,11 +84,11 @@ export function TransferPanel({ notify }: { notify: Notify }) {
           <table className="transfer-table">
             <thead>
               <tr>
-                <th>文件 / 方向</th>
-                <th>进度</th>
-                <th>速度</th>
-                <th>状态</th>
-                <th>操作</th>
+                <th>{tr("文件 / 方向")}</th>
+                <th>{tr("进度")}</th>
+                <th>{tr("速度")}</th>
+                <th>{tr("状态")}</th>
+                <th>{tr("操作")}</th>
               </tr>
             </thead>
             <tbody>
@@ -143,7 +143,7 @@ export function TransferPanel({ notify }: { notify: Notify }) {
                       <div className="row-actions">
                         {state === "running" && (
                           <IconButton
-                            title="暂停"
+                            title={tr("暂停")}
                             onClick={() => void control(t.id, "pause")}
                           >
                             <Pause size={14} />
@@ -151,7 +151,7 @@ export function TransferPanel({ notify }: { notify: Notify }) {
                         )}
                         {["paused", "failed"].includes(state) && (
                           <IconButton
-                            title="校验并续传"
+                            title={tr("校验并续传")}
                             onClick={() => void control(t.id, "resume")}
                           >
                             <Play size={14} />
@@ -166,7 +166,7 @@ export function TransferPanel({ notify }: { notify: Notify }) {
                           "verifying",
                         ].includes(state) && (
                           <IconButton
-                            title="取消传输"
+                            title={tr("取消传输")}
                             onClick={() => void control(t.id, "cancel")}
                           >
                             <X size={14} />
@@ -183,8 +183,8 @@ export function TransferPanel({ notify }: { notify: Notify }) {
       ) : (
         <Empty
           icon={<ArrowDownToLine size={25} />}
-          title="传输队列为空"
-          text="在文件面板上传或下载文件，进度会显示在这里。"
+          title={tr("传输队列为空")}
+          text={tr("在文件面板上传或下载文件，进度会显示在这里。")}
         />
       )}
     </div>
@@ -228,7 +228,7 @@ export function SnippetPanel({
   }
   async function insert(snippet: Snippet, execute: boolean) {
     if (!session || session.status !== "connected") {
-      notify("请先选择一个已连接的终端。", "info");
+      notify(tr("请先选择一个已连接的终端。"), "info");
       return;
     }
     const keys = [
@@ -248,8 +248,8 @@ export function SnippetPanel({
     if (
       execute &&
       !(await confirmAction(
-        `将在 ${session.name} 执行：\n\n${command}`,
-        "执行快捷命令",
+        tr("将在 {0} 执行：\n\n{1}", session.name, command),
+        tr("执行快捷命令"),
       ))
     )
       return;
@@ -260,7 +260,7 @@ export function SnippetPanel({
         session.local,
       );
       setRunning(null);
-      notify(execute ? "命令已发送。" : "已插入终端，按回车执行。", "success");
+      notify(execute ? tr("命令已发送。") : tr("已插入终端，按回车执行。"), "success");
     } catch (e) {
       notify(errorText(e), "error");
     }
@@ -268,8 +268,8 @@ export function SnippetPanel({
   return (
     <div className="operation-panel">
       <div className="panel-toolbar">
-        <span className="panel-context">快捷命令</span>
-        <span className="muted">支持 {"{{参数名}}"} 模板</span>
+        <span className="panel-context">{tr("快捷命令")}</span>
+        <span className="muted">{tr("支持")}{" "}{tr("{{参数名}}")}{" "}{tr("模板")}</span>
         <span className="flex-spacer" />
         <button
           className="button subtle small"
@@ -282,9 +282,7 @@ export function SnippetPanel({
             })
           }
         >
-          <Plus size={14} />
-          新增命令
-        </button>
+          <Plus size={14} />{tr("新增命令")}</button>
       </div>
       {error && <ErrorBox message={error} />}
       <div className="snippet-grid scroll-area">
@@ -293,14 +291,14 @@ export function SnippetPanel({
             <header>
               <Code2 size={15} />
               <strong>{s.name}</strong>
-              <span>{s.group}</span>
-              <IconButton title="编辑命令" onClick={() => setEditing({ ...s })}>
+              <span>{s.group === "常用命令" ? tr("常用命令") : s.group}</span>
+              <IconButton title={tr("编辑命令")} onClick={() => setEditing({ ...s })}>
                 <Pencil size={13} />
               </IconButton>
               <IconButton
-                title="删除命令"
+                title={tr("删除命令")}
                 onClick={async () => {
-                  if (await confirmAction(`删除快捷命令“${s.name}”？`)) {
+                  if (await confirmAction(tr("删除快捷命令“{0}”？", s.name))) {
                     try {
                       await api("snippet_delete", { id: s.id });
                       await load();
@@ -318,9 +316,7 @@ export function SnippetPanel({
               <button
                 className="text-button"
                 onClick={() => void insert(s, false)}
-              >
-                插入终端
-                <ArrowRight size={13} />
+              >{tr("插入终端")}<ArrowRight size={13} />
               </button>
             </footer>
           </div>
@@ -329,22 +325,20 @@ export function SnippetPanel({
       {!items.length && (
         <Empty
           icon={<Code2 size={24} />}
-          title="把常用命令留在手边"
-          text="保存部署、日志和诊断命令，按主机需求填入参数。"
+          title={tr("把常用命令留在手边")}
+          text={tr("保存部署、日志和诊断命令，按主机需求填入参数。")}
         />
       )}
       {editing && (
         <Modal
-          title="快捷命令"
+          title={tr("快捷命令")}
           onClose={() => setEditing(null)}
           footer={
             <>
               <button
                 className="button secondary"
                 onClick={() => setEditing(null)}
-              >
-                取消
-              </button>
+              >{tr("取消")}</button>
               <button
                 className="button primary"
                 disabled={
@@ -352,13 +346,13 @@ export function SnippetPanel({
                 }
                 onClick={() => void save()}
               >
-                {busy ? <Busy /> : "保存"}
+                {busy ? <Busy /> : tr("保存")}
               </button>
             </>
           }
         >
           <div className="form-grid">
-            <Field label="名称">
+            <Field label={tr("名称")}>
               <input
                 value={editing.name}
                 onChange={(e) =>
@@ -366,7 +360,7 @@ export function SnippetPanel({
                 }
               />
             </Field>
-            <Field label="分组">
+            <Field label={tr("分组")}>
               <input
                 value={editing.group}
                 onChange={(e) =>
@@ -375,9 +369,9 @@ export function SnippetPanel({
               />
             </Field>
             <Field
-              label="命令内容"
+              label={tr("命令内容")}
               full
-              hint="例如：tail -n 100 {{log_path}}。模板参数按原文代入，请自行正确引用路径。"
+              hint={tr("例如：tail -n 100 {{log_path}}。模板参数按原文代入，请自行正确引用路径。")}
             >
               <textarea
                 className="code-input"
@@ -393,22 +387,18 @@ export function SnippetPanel({
       )}
       {running && (
         <Modal
-          title={`填写参数 · ${running.name}`}
+          title={tr("填写参数 · {0}", running.name)}
           onClose={() => setRunning(null)}
           footer={
             <>
               <button
                 className="button secondary"
                 onClick={() => void insert(running, false)}
-              >
-                插入终端
-              </button>
+              >{tr("插入终端")}</button>
               <button
                 className="button primary"
                 onClick={() => void insert(running, true)}
-              >
-                确认执行
-              </button>
+              >{tr("确认执行")}</button>
             </>
           }
         >
@@ -472,8 +462,8 @@ export function TunnelPanel({
         bindHost !== "::1" &&
         bindHost !== "localhost" &&
         !(await confirmAction(
-          "此监听地址可能允许其他设备访问转发服务。确认继续？",
-          "开放转发监听",
+          tr("此监听地址可能允许其他设备访问转发服务。确认继续？"),
+          tr("开放转发监听"),
         ))
       ) {
         setBusy(false);
@@ -489,7 +479,7 @@ export function TunnelPanel({
       });
       setCreating(false);
       await load();
-      notify("端口转发已启动。", "success");
+      notify(tr("端口转发已启动。"), "success");
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -499,17 +489,15 @@ export function TunnelPanel({
   return (
     <div className="operation-panel">
       <div className="panel-toolbar">
-        <span className="panel-context">SSH 隧道</span>
-        <span className="muted">默认仅监听本机回环地址</span>
+        <span className="panel-context">{tr("SSH 隧道")}</span>
+        <span className="muted">{tr("默认仅监听本机回环地址")}</span>
         <span className="flex-spacer" />
         <button
           className="button subtle small"
           disabled={!remote}
           onClick={() => setCreating(true)}
         >
-          <Plus size={14} />
-          新建转发
-        </button>
+          <Plus size={14} />{tr("新建转发")}</button>
       </div>
       {error && !creating && <ErrorBox message={error} />}
       <div className="scroll-area">
@@ -517,10 +505,10 @@ export function TunnelPanel({
           <table>
             <thead>
               <tr>
-                <th>类型</th>
-                <th>监听地址</th>
-                <th>目标地址</th>
-                <th>操作</th>
+                <th>{tr("类型")}</th>
+                <th>{tr("监听地址")}</th>
+                <th>{tr("目标地址")}</th>
+                <th>{tr("操作")}</th>
               </tr>
             </thead>
             <tbody>
@@ -530,9 +518,9 @@ export function TunnelPanel({
                     <span className="status-dot connected" />
                     {
                       {
-                        local: "本地转发",
-                        remote: "远程转发",
-                        dynamic: "SOCKS5 动态转发",
+                        local: tr("本地转发"),
+                        remote: tr("远程转发"),
+                        dynamic: tr("SOCKS5 动态转发"),
                       }[t.kind]
                     }
                   </td>
@@ -541,7 +529,7 @@ export function TunnelPanel({
                   </td>
                   <td className="mono">
                     {t.kind === "dynamic"
-                      ? "按 SOCKS5 请求"
+                      ? tr("按 SOCKS5 请求")
                       : `${t.targetHost}:${t.targetPort}`}
                   </td>
                   <td>
@@ -556,9 +544,7 @@ export function TunnelPanel({
                         }
                       }}
                     >
-                      <Square size={12} />
-                      停止
-                    </button>
+                      <Square size={12} />{tr("停止")}</button>
                   </td>
                 </tr>
               ))}
@@ -567,24 +553,22 @@ export function TunnelPanel({
         ) : (
           <Empty
             icon={<Network size={24} />}
-            title="没有运行中的隧道"
-            text="通过 SSH 访问数据库、内网服务，或创建 SOCKS5 代理。"
+            title={tr("没有运行中的隧道")}
+            text={tr("通过 SSH 访问数据库、内网服务，或创建 SOCKS5 代理。")}
           />
         )}
       </div>
       {creating && (
         <Modal
-          title="新建端口转发"
-          subtitle={`通过 ${remote?.name || ""}`}
+          title={tr("新建端口转发")}
+          subtitle={tr("通过 {0}", remote?.name || "")}
           onClose={() => setCreating(false)}
           footer={
             <>
               <button
                 className="button secondary"
                 onClick={() => setCreating(false)}
-              >
-                取消
-              </button>
+              >{tr("取消")}</button>
               <button
                 className="button primary"
                 disabled={
@@ -595,30 +579,30 @@ export function TunnelPanel({
                 }
                 onClick={() => void start()}
               >
-                {busy ? <Busy /> : "启动转发"}
+                {busy ? <Busy /> : tr("启动转发")}
               </button>
             </>
           }
         >
           {error && <ErrorBox message={error} />}
           <div className="form-grid">
-            <Field label="转发类型" full>
+            <Field label={tr("转发类型")} full>
               <select
                 value={kind}
                 onChange={(e) => setKind(e.target.value as Tunnel["kind"])}
               >
-                <option value="local">本地端口转发（-L）</option>
-                <option value="remote">远程端口转发（-R）</option>
-                <option value="dynamic">动态 SOCKS5 代理（-D）</option>
+                <option value="local">{tr("本地端口转发（-L）")}</option>
+                <option value="remote">{tr("远程端口转发（-R）")}</option>
+                <option value="dynamic">{tr("动态 SOCKS5 代理（-D）")}</option>
               </select>
             </Field>
-            <Field label="监听地址">
+            <Field label={tr("监听地址")}>
               <input
                 value={bindHost}
                 onChange={(e) => setBindHost(e.target.value)}
               />
             </Field>
-            <Field label="监听端口">
+            <Field label={tr("监听端口")}>
               <input
                 type="number"
                 min={1}
@@ -630,14 +614,14 @@ export function TunnelPanel({
             {kind !== "dynamic" && (
               <>
                 <Field
-                  label={kind === "remote" ? "本地目标地址" : "远程目标地址"}
+                  label={kind === "remote" ? tr("本地目标地址") : tr("远程目标地址")}
                 >
                   <input
                     value={targetHost}
                     onChange={(e) => setTargetHost(e.target.value)}
                   />
                 </Field>
-                <Field label="目标端口">
+                <Field label={tr("目标端口")}>
                   <input
                     type="number"
                     min={1}
@@ -706,18 +690,18 @@ export function DockerPanel({
     action: "start" | "stop" | "restart",
   ) {
     if (!remote) return;
-    const label = { start: "启动", stop: "停止", restart: "重启" }[action];
+    const label = { start: tr("启动"), stop: tr("停止"), restart: tr("重启") }[action];
     if (
       !(await confirmAction(
-        `确认${label} ${remote.name} 上的容器 ${c.name}？`,
-        "容器操作",
+        tr("确认{0} {1} 上的容器 {2}？", label, remote.name, c.name),
+        tr("容器操作"),
       ))
     )
       return;
     setBusy(true);
     try {
       await api("docker_action", { sessionId: remote.id, id: c.id, action });
-      notify(`容器已${label}。`, "success");
+      notify(tr("容器已{0}。", label), "success");
       await load();
     } catch (e) {
       notify(errorText(e), "error");
@@ -729,8 +713,8 @@ export function DockerPanel({
     return (
       <Empty
         icon={<Container size={25} />}
-        title="Docker 容器"
-        text="连接 Linux 服务器后，查看容器状态、日志与常用操作。"
+        title={tr("Docker 容器")}
+        text={tr("连接 Linux 服务器后，查看容器状态、日志与常用操作。")}
       />
     );
   return (
@@ -739,19 +723,17 @@ export function DockerPanel({
         <button
           className={`button subtle small ${view === "containers" ? "accent" : ""}`}
           onClick={() => setView("containers")}
-        >
-          容器 <span className="count">{items.length}</span>
+        >{tr("容器")}{" "}<span className="count">{items.length}</span>
         </button>
         <button
           className={`button subtle small ${view === "images" ? "accent" : ""}`}
           onClick={() => setView("images")}
-        >
-          镜像 <span className="count">{images.length}</span>
+        >{tr("镜像")}{" "}<span className="count">{images.length}</span>
         </button>
         <span className="muted">{remote.name}</span>
         <span className="flex-spacer" />
         <IconButton
-          title="刷新容器"
+          title={tr("刷新容器")}
           disabled={busy}
           onClick={() => void load()}
         >
@@ -766,11 +748,11 @@ export function DockerPanel({
               <table>
                 <thead>
                   <tr>
-                    <th>仓库</th>
-                    <th>标签</th>
-                    <th>镜像 ID</th>
-                    <th>大小</th>
-                    <th>创建时间</th>
+                    <th>{tr("仓库")}</th>
+                    <th>{tr("标签")}</th>
+                    <th>{tr("镜像 ID")}</th>
+                    <th>{tr("大小")}</th>
+                    <th>{tr("创建时间")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -792,8 +774,8 @@ export function DockerPanel({
               !error && (
                 <Empty
                   icon={<Container size={24} />}
-                  title="没有镜像"
-                  text="当前服务器没有本地 Docker 镜像。"
+                  title={tr("没有镜像")}
+                  text={tr("当前服务器没有本地 Docker 镜像。")}
                 />
               )
             )}
@@ -802,11 +784,11 @@ export function DockerPanel({
           <table>
             <thead>
               <tr>
-                <th>容器</th>
-                <th>镜像</th>
-                <th>状态</th>
-                <th>端口</th>
-                <th>操作</th>
+                <th>{tr("容器")}</th>
+                <th>{tr("镜像")}</th>
+                <th>{tr("状态")}</th>
+                <th>{tr("端口")}</th>
+                <th>{tr("操作")}</th>
               </tr>
             </thead>
             <tbody>
@@ -830,7 +812,7 @@ export function DockerPanel({
                   <td>
                     <div className="row-actions">
                       <IconButton
-                        title="查看日志"
+                        title={tr("查看日志")}
                         onClick={async () => {
                           try {
                             setLogs({
@@ -850,14 +832,14 @@ export function DockerPanel({
                       {c.state === "running" ? (
                         <>
                           <IconButton
-                            title="停止"
+                            title={tr("停止")}
                             disabled={busy}
                             onClick={() => void action(c, "stop")}
                           >
                             <Square size={13} />
                           </IconButton>
                           <IconButton
-                            title="重启"
+                            title={tr("重启")}
                             disabled={busy}
                             onClick={() => void action(c, "restart")}
                           >
@@ -866,7 +848,7 @@ export function DockerPanel({
                         </>
                       ) : (
                         <IconButton
-                          title="启动"
+                          title={tr("启动")}
                           disabled={busy}
                           onClick={() => void action(c, "start")}
                         >
@@ -884,19 +866,19 @@ export function DockerPanel({
           !error && (
             <Empty
               icon={<Container size={24} />}
-              title="没有容器"
-              text="当前服务器尚未创建 Docker 容器。"
+              title={tr("没有容器")}
+              text={tr("当前服务器尚未创建 Docker 容器。")}
             />
           )
         )}
       </div>
       {logs && (
         <Modal
-          title={`容器日志 · ${logs.name}`}
+          title={tr("容器日志 · {0}", logs.name)}
           onClose={() => setLogs(null)}
           wide
         >
-          <pre className="logs-output">{logs.text || "暂无日志"}</pre>
+          <pre className="logs-output">{logs.text || tr("暂无日志")}</pre>
         </Modal>
       )}
     </div>

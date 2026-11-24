@@ -1,3 +1,4 @@
+import { tr, useLocale } from "./i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Channel } from "@tauri-apps/api/core";
 import {
@@ -97,6 +98,7 @@ const panelItems = [
   { id: "docker", name: "Docker", icon: Container },
 ];
 export default function App() {
+  useLocale();
   const [hosts, setHosts] = useState<Host[]>([]);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [workspace, setWorkspace] = useState<Workspace>(defaultWorkspace);
@@ -235,7 +237,7 @@ export default function App() {
       ["closed", "disconnected", "failed", "error"].includes(session.status)
     )
       return;
-    notify(`${session.name}：${message}。正在关闭会话，请重新连接。`, "error");
+    notify(tr("{0}：{1}。正在关闭会话，请重新连接。", session.name, message), "error");
     setSessions((list) =>
       list.map((s) =>
         s.id === sessionId
@@ -247,7 +249,7 @@ export default function App() {
     void api("session_close", { sessionId, local: session.local })
       .catch((error) => {
         notify(
-          `关闭 ${session.name} 未完成：${errorText(error)}。请关闭该会话或退出应用。`,
+          tr("关闭 {0} 未完成：{1}。请关闭该会话或退出应用。", session.name, errorText(error)),
           "error",
         );
       })
@@ -267,22 +269,22 @@ export default function App() {
     const cancelled = () => automatic && !!signal?.aborted;
     if (cancelled()) return false;
     if (connectionLock.current) {
-      if (!automatic) notify("请先完成当前连接的身份核验。", "info");
+      if (!automatic) notify(tr("请先完成当前连接的身份核验。"), "info");
       return false;
     }
     if (hasDirtyDrafts()) {
       if (automatic) return false;
       if (
         !(await confirmAction(
-          "新连接成功后将切换工作台，当前未保存的文件修改会被放弃。",
-          "打开新会话",
+          tr("新连接成功后将切换工作台，当前未保存的文件修改会被放弃。"),
+          tr("打开新会话"),
         ))
       )
         return false;
     }
     if (connecting.has(host.id)) return false;
     if (!native) {
-      notify("当前是界面预览，请使用桌面应用连接 SSH 服务器。", "info");
+      notify(tr("当前是界面预览，请使用桌面应用连接 SSH 服务器。"), "info");
       return false;
     }
     connectionLock.current = true;
@@ -296,12 +298,12 @@ export default function App() {
           (s) => s.hostId === host.jumpHostId && s.status === "connected",
         )
       )
-        throw new Error("请先连接并验证此主机配置的跳板机，再连接目标服务器。");
+        throw new Error(tr("请先连接并验证此主机配置的跳板机，再连接目标服务器。"));
       const info = await api<HostKeyInfo>("ssh_probe", { hostId: host.id });
       if (cancelled()) return false;
       if (!info.trusted) {
         if (automatic)
-          throw new Error("主机指纹需要手动核验，已暂停自动重连。");
+          throw new Error(tr("主机指纹需要手动核验，已暂停自动重连。"));
         const accept = await new Promise<boolean>((resolve) =>
           setTrust({ host, info, resolve }),
         );
@@ -316,7 +318,7 @@ export default function App() {
           if (mode === "local") {
             const status = await api<VaultStatus>("vault_status");
             if (status.initialized && !status.unlocked) {
-              if (automatic) throw new Error("本地密码库已锁定，请手动解锁后连接。");
+              if (automatic) throw new Error(tr("本地密码库已锁定，请手动解锁后连接。"));
               const unlocked = await new Promise<boolean>((resolve) =>
                 setVaultPrompt({ resolve }),
               );
@@ -327,12 +329,12 @@ export default function App() {
             }
           } else {
             if (automatic) throw e;
-            notify("当前凭据库不可用，请为本次连接输入临时密码。", "info");
+            notify(tr("当前凭据库不可用，请为本次连接输入临时密码。"), "info");
           }
         }
         if (cancelled()) return false;
         if (!saved) {
-          if (automatic) throw new Error("没有已保存的凭据，请手动重新连接。");
+          if (automatic) throw new Error(tr("没有已保存的凭据，请手动重新连接。"));
           secret = await new Promise<SecretInput | null>((resolve) =>
             setSecretPrompt({ host, resolve }),
           );
@@ -381,7 +383,7 @@ export default function App() {
           forgetTerminal(id);
           statusRef.current.delete(id);
         } catch (error) {
-          const message = `自动重连已取消，但新会话未能关闭：${errorText(error)}。请关闭此会话重试。`;
+          const message = tr("自动重连已取消，但新会话未能关闭：{0}。请关闭此会话重试。", errorText(error));
           // Keep an actionable recovery tab, without restarting the cancelled connection.
           reconnecting.current.add(id);
           setSessions((list) => [
@@ -423,7 +425,7 @@ export default function App() {
         setActiveId(id);
       restoreRef.current = [];
       reconnectAttempts.current.delete(host.id);
-      notify(`已连接 ${host.name}。`, "success");
+      notify(tr("已连接 {0}。", host.name), "success");
       return true;
     } catch (e) {
       if (!cancelled()) notify(errorText(e), "error");
@@ -447,8 +449,8 @@ export default function App() {
       id !== activeId &&
       hasDirtyDrafts() &&
       !(await confirmAction(
-        "文件编辑器有未保存的修改。切换终端会放弃当前编辑。",
-        "切换会话",
+        tr("文件编辑器有未保存的修改。切换终端会放弃当前编辑。"),
+        tr("切换会话"),
       ))
     )
       return;
@@ -458,13 +460,13 @@ export default function App() {
     if (
       hasDirtyDrafts() &&
       !(await confirmAction(
-        "打开本地终端会切换工作台并放弃当前未保存的文件修改。",
-        "打开本地终端",
+        tr("打开本地终端会切换工作台并放弃当前未保存的文件修改。"),
+        tr("打开本地终端"),
       ))
     )
       return;
     if (!native) {
-      notify("本地终端需要在 Shell EX 桌面应用中打开。", "info");
+      notify(tr("本地终端需要在 Shell EX 桌面应用中打开。"), "info");
       return;
     }
     try {
@@ -481,7 +483,7 @@ export default function App() {
         {
           id,
           hostId: null,
-          name: "本地终端",
+          name: tr("本地终端"),
           local: true,
           status: "connected",
           connectedAt: Date.now(),
@@ -498,8 +500,8 @@ export default function App() {
       !force &&
       (session.status === "connected" || hasDirtyDrafts()) &&
       !(await confirmAction(
-        `关闭“${session.name}”会终止此终端和相关隧道，并取消关联传输。${hasDirtyDrafts() ? "编辑器尚有未保存修改，将被放弃。" : ""}`,
-        "关闭会话",
+        tr("关闭“{0}”会终止此终端和相关隧道，并取消关联传输。{1}", session.name, hasDirtyDrafts() ? tr("编辑器尚有未保存修改，将被放弃。") : ""),
+        tr("关闭会话"),
       ))
     )
       return;
@@ -526,7 +528,7 @@ export default function App() {
             ? {
                 ...s,
                 status: "error",
-                error: `关闭会话未完成：${errorText(e)}`,
+                error: tr("关闭会话未完成：{0}", errorText(e)),
               }
             : s,
         ),
@@ -649,9 +651,9 @@ export default function App() {
           if (
             await confirmAction(
               hasDirtyDrafts()
-                ? "编辑器有未保存的修改。退出会放弃修改，关闭会话并取消传输。"
-                : "退出将关闭所有终端和隧道，并取消正在运行的传输。请确认重要任务已保存。",
-              "退出 Shell EX",
+                ? tr("编辑器有未保存的修改。退出会放弃修改，关闭会话并取消传输。")
+                : tr("退出将关闭所有终端和隧道，并取消正在运行的传输。请确认重要任务已保存。"),
+              tr("退出 Shell EX"),
             )
           ) {
             cancelReconnects();
@@ -683,11 +685,11 @@ export default function App() {
     if (
       sessions.some((s) => s.hostId === host.id && s.status === "connected")
     ) {
-      notify("请先关闭此主机的会话。", "info");
+      notify(tr("请先关闭此主机的会话。"), "info");
       return;
     }
     if (
-      !(await confirmAction(`删除“${host.name}”及其保存的凭据？`, "删除连接"))
+      !(await confirmAction(tr("删除“{0}”及其保存的凭据？", host.name), tr("删除连接")))
     )
       return;
     try {
@@ -700,7 +702,7 @@ export default function App() {
   async function saveSettings(next: AppSettings) {
     const saved = await api<AppSettings>("settings_save", { settings: next });
     setSettings(saved);
-    notify("设置已保存。", "success");
+    notify(tr("设置已保存。"), "success");
   }
   function dragDimension(e: React.PointerEvent, kind: "sidebar" | "files") {
     e.preventDefault();
@@ -767,7 +769,7 @@ export default function App() {
             const open = sessions.find((s) => s.hostId === host.id);
             if (open) void selectSession(open.id);
           }}
-          title={`双击连接 ${host.username}@${host.address}:${host.port}`}
+          title={tr("双击连接 {0}@{1}:{2}", host.username, host.address, host.port)}
         >
           <span className="host-icon" style={{ color: host.color }}>
             <Server size={16} />
@@ -782,7 +784,7 @@ export default function App() {
           {host.favorite && <Star className="favorite" size={11} />}
         </button>
         <IconButton
-          title={`${host.name} 更多操作`}
+          title={tr("{0} 更多操作", host.name)}
           onClick={() => {
             setHostMenu(hostMenu === slot + host.id ? null : slot + host.id);
           }}
@@ -792,31 +794,25 @@ export default function App() {
         {hostMenu === slot + host.id && (
           <div className="context-menu" onClick={(e) => e.stopPropagation()}>
             <button onClick={() => void connectHost(host)}>
-              <TerminalSquare size={14} />
-              连接服务器
-            </button>
+              <TerminalSquare size={14} />{tr("连接服务器")}</button>
             <button
               onClick={() => {
                 setHostDialog(host);
                 setHostMenu(null);
               }}
             >
-              <Pencil size={14} />
-              编辑连接
-            </button>
+              <Pencil size={14} />{tr("编辑连接")}</button>
             <button
               onClick={() => {
                 setHostDialog({
                   ...host,
                   id: crypto.randomUUID(),
-                  name: `${host.name} 副本`,
+                  name: tr("{0} 副本", host.name),
                 });
                 setHostMenu(null);
               }}
             >
-              <Copy size={14} />
-              复制配置
-            </button>
+              <Copy size={14} />{tr("复制配置")}</button>
             <button
               onClick={async () => {
                 try {
@@ -832,12 +828,10 @@ export default function App() {
               }}
             >
               <Star size={14} />
-              {host.favorite ? "取消收藏" : "加入收藏"}
+              {host.favorite ? tr("取消收藏") : tr("加入收藏")}
             </button>
             <button className="red" onClick={() => void deleteHost(host)}>
-              <Trash2 size={14} />
-              删除连接
-            </button>
+              <Trash2 size={14} />{tr("删除连接")}</button>
           </div>
         )}
       </div>
@@ -853,7 +847,7 @@ export default function App() {
         </div>
         <div className="header-actions">
           <IconButton
-            title="快速查找主机和操作 ⌘K"
+            title={tr("快速查找主机和操作 ⌘K")}
             onClick={() => { setPalette(true); setPaletteQuery(""); }}
           >
             <Search size={16} />
@@ -861,18 +855,14 @@ export default function App() {
           <span className={`environment-label${!native ? " preview" : ""}`}>
             {native ? (
               <>
-                <LockKeyhole size={12} />
-                本地工作台
-              </>
+                <LockKeyhole size={12} />{tr("本地工作台")}</>
             ) : (
               <>
-                <Monitor size={12} />
-                界面预览
-              </>
+                <Monitor size={12} />{tr("界面预览")}</>
             )}
           </span>
           <span className="toolbar-separator" />
-          <IconButton title="设置 ⌘," onClick={() => setSettingsOpen(true)}>
+          <IconButton title={tr("设置 ⌘,")} onClick={() => setSettingsOpen(true)}>
             <Settings size={17} />
           </IconButton>
         </div>
@@ -885,11 +875,11 @@ export default function App() {
               style={{ width: workspace.sidebarWidth }}
             >
               <header className="sidebar-heading">
-                <strong>连接</strong>
+                <strong>{tr("连接")}</strong>
                 <span>{hosts.length}</span>
                 <div className="flex-spacer" />
                 <IconButton
-                  title="新建连接 ⌘⇧N"
+                  title={tr("新建连接 ⌘⇧N")}
                   onClick={() => setHostDialog(null)}
                 >
                   <Plus size={17} />
@@ -898,8 +888,8 @@ export default function App() {
               <div className="host-search">
                 <Search size={13} />
                 <input
-                  placeholder="筛选主机…"
-                  aria-label="筛选主机"
+                  placeholder={tr("筛选主机…")}
+                  aria-label={tr("筛选主机")}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                 />
@@ -929,7 +919,7 @@ export default function App() {
                         <ChevronDown size={12} />
                       )}
                       <Star size={12} />
-                      <span>收藏</span>
+                      <span>{tr("收藏")}</span>
                     </button>
                     {!collapsed.has("__favorites") &&
                       hosts
@@ -956,7 +946,7 @@ export default function App() {
                         <ChevronDown size={12} />
                       )}
                       <FolderOpen size={12} />
-                      <span>{group}</span>
+                      <span>{group === "默认分组" ? tr("默认分组") : group}</span>
                       <small>
                         {
                           visibleHosts.filter(
@@ -974,34 +964,28 @@ export default function App() {
                 {!hosts.length && (
                   <div className="sidebar-empty">
                     <Server size={26} />
-                    <strong>还没有连接</strong>
-                    <p>
-                      添加你的第一台服务器
-                      <br />
-                      开始管理远程工作。
-                    </p>
+                    <strong>{tr("还没有连接")}</strong>
+                    <p>{tr("添加你的第一台服务器")}<br />{tr("开始管理远程工作。")}</p>
                     <button
                       className="button secondary small"
                       onClick={() => setHostDialog(null)}
                     >
-                      <Plus size={13} />
-                      添加连接
-                    </button>
+                      <Plus size={13} />{tr("添加连接")}</button>
                   </div>
                 )}
                 {!!hosts.length && !visibleHosts.length && (
-                  <p className="sidebar-no-results">没有匹配的主机</p>
+                  <p className="sidebar-no-results">{tr("没有匹配的主机")}</p>
                 )}
               </div>
               <div className="sidebar-bottom">
                 <button onClick={() => void openLocal()}>
                   <TerminalSquare size={16} />
-                  <span>本地终端</span>
+                  <span>{tr("本地终端")}</span>
                   <kbd>⌘⇧L</kbd>
                 </button>
                 <button onClick={() => setHelp(true)}>
                   <CircleHelp size={16} />
-                  <span>使用指南</span>
+                  <span>{tr("使用指南")}</span>
                   <ArrowUpRight size={13} />
                 </button>
               </div>
@@ -1010,7 +994,7 @@ export default function App() {
               className="resize-handle vertical"
               onPointerDown={(e) => dragDimension(e, "sidebar")}
               role="separator"
-              aria-label="调整侧边栏宽度"
+              aria-label={tr("调整侧边栏宽度")}
               aria-orientation="vertical"
             />
           </>
@@ -1018,7 +1002,7 @@ export default function App() {
         <main className="workbench">
           <div className="session-bar">
             <IconButton
-              title={sidebar ? "收起主机列表" : "显示主机列表"}
+              title={sidebar ? tr("收起主机列表") : tr("显示主机列表")}
               onClick={() => setSidebar((v) => !v)}
             >
               {sidebar ? (
@@ -1030,9 +1014,7 @@ export default function App() {
             <div className="session-tabs">
               {!sessions.length ? (
                 <div className="session-tab selected welcome-tab">
-                  <TerminalSquare size={14} />
-                  工作台
-                </div>
+                  <TerminalSquare size={14} />{tr("工作台")}</div>
               ) : (
                 sessions.map((s) => (
                   <div
@@ -1042,9 +1024,9 @@ export default function App() {
                   >
                     <span className={`status-dot ${s.status}`} />
                     <span>{s.name}</span>
-                    {s.local && <small>本地</small>}
+                    {s.local && <small>{tr("本地")}</small>}
                     <button
-                      aria-label={`关闭 ${s.name}`}
+                      aria-label={tr("关闭 {0}", s.name)}
                       onClick={(e) => {
                         e.stopPropagation();
                         void closeSession(s);
@@ -1057,7 +1039,7 @@ export default function App() {
               )}
             </div>
             <IconButton
-              title="新建会话"
+              title={tr("新建会话")}
               onClick={() => {
                 setPalette(true);
                 setPaletteQuery("");
@@ -1067,7 +1049,7 @@ export default function App() {
             </IconButton>
             <span className="toolbar-separator" />
             <IconButton
-              title="左右分屏"
+              title={tr("左右分屏")}
               active={workspace.split === "horizontal"}
               disabled={sessions.length < 2}
               onClick={() =>
@@ -1080,7 +1062,7 @@ export default function App() {
               <Columns2 size={15} />
             </IconButton>
             <IconButton
-              title="上下分屏"
+              title={tr("上下分屏")}
               active={workspace.split === "vertical"}
               disabled={sessions.length < 2}
               onClick={() =>
@@ -1093,13 +1075,13 @@ export default function App() {
               <Rows2 size={15} />
             </IconButton>
             <IconButton
-              title="专注模式"
+              title={tr("专注模式")}
               onClick={async () => {
                 if (
                   hasDirtyDrafts() &&
                   !(await confirmAction(
-                    "专注模式将关闭文件面板并放弃当前未保存的修改。",
-                    "进入专注模式",
+                    tr("专注模式将关闭文件面板并放弃当前未保存的修改。"),
+                    tr("进入专注模式"),
                   ))
                 )
                   return;
@@ -1144,8 +1126,8 @@ export default function App() {
                         <div className="disconnected-banner">
                           <AlertCircle size={14} />
                           <span>
-                            {labels[s.status] || s.status} ·{" "}
-                            {s.error || "重新连接将打开新会话"}
+                            {labels[s.status] ? tr(labels[s.status]) : s.status} ·{" "}
+                            {s.error || tr("重新连接将打开新会话")}
                           </span>
                           {s.hostId && (
                             <button
@@ -1155,9 +1137,7 @@ export default function App() {
                                 if (h) void connectHost(h);
                               }}
                             >
-                              <RefreshCw size={13} />
-                              重新连接
-                            </button>
+                              <RefreshCw size={13} />{tr("重新连接")}</button>
                           )}
                         </div>
                       )}
@@ -1170,75 +1150,64 @@ export default function App() {
                         <TerminalSquare size={30} strokeWidth={1.3} />
                       </div>
                       <span className="eyebrow">SHELL EX WORKSPACE</span>
-                      <h1>从一台服务器开始。</h1>
-                      <p>终端、文件与系统状态，在同一个工作空间。</p>
+                      <h1>{tr("从一台服务器开始。")}</h1>
+                      <p>{tr("终端、文件与系统状态，在同一个工作空间。")}</p>
                     </div>
                     <div className="welcome-actions">
                       <button
                         className="button primary"
                         onClick={() => setHostDialog(null)}
                       >
-                        <Plus size={16} />
-                        新建 SSH 连接
-                      </button>
+                        <Plus size={16} />{tr("新建 SSH 连接")}</button>
                       <button
                         className="button secondary"
                         onClick={() => void openLocal()}
                       >
-                        <TerminalSquare size={16} />
-                        打开本地终端
-                      </button>
+                        <TerminalSquare size={16} />{tr("打开本地终端")}</button>
                     </div>
                     {remembered.length > 0 && (
                       <div className="restore-workspace">
-                        <span>上次工作区 · {remembered.length} 台主机</span>
+                        <span>{tr("上次工作区 ·")}{" "}{remembered.length}{" "}{tr("台主机")}</span>
                         <button
                           className="text-button"
                           onClick={async () => {
                             for (const h of remembered) await connectHost(h);
                             restoreRef.current = [];
                           }}
-                        >
-                          重新连接
-                          <ArrowUpRight size={13} />
+                        >{tr("重新连接")}<ArrowUpRight size={13} />
                         </button>
                       </div>
                     )}
                     <div className="welcome-details">
                       <div>
                         <ShieldCheck size={17} />
-                        <strong>安全连接</strong>
-                        <span>验证主机身份，保护凭据</span>
+                        <strong>{tr("安全连接")}</strong>
+                        <span>{tr("验证主机身份，保护凭据")}</span>
                       </div>
                       <div>
                         <Folder size={17} />
-                        <strong>文件随手可及</strong>
-                        <span>SFTP 传输与远程编辑</span>
+                        <strong>{tr("文件随手可及")}</strong>
+                        <span>{tr("SFTP 传输与远程编辑")}</span>
                       </div>
                       <div>
                         <Network size={17} />
-                        <strong>适应你的网络</strong>
-                        <span>代理、跳板机与端口转发</span>
+                        <strong>{tr("适应你的网络")}</strong>
+                        <span>{tr("代理、跳板机与端口转发")}</span>
                       </div>
                     </div>
                     <div className="welcome-shortcuts">
-                      <span>
-                        快速查找<kbd>⌘ K</kbd>
+                      <span>{tr("快速查找")}<kbd>⌘ K</kbd>
                       </span>
-                      <span>
-                        新建连接<kbd>⌘ ⇧ N</kbd>
+                      <span>{tr("新建连接")}<kbd>⌘ ⇧ N</kbd>
                       </span>
-                      <span>
-                        设置<kbd>⌘ ,</kbd>
+                      <span>{tr("设置")}<kbd>⌘ ,</kbd>
                       </span>
                     </div>
                   </div>
                 )}
                 {connecting.size > 0 && (
                   <div className="connecting-overlay">
-                    <LoaderCircle size={15} className="spin" />
-                    正在连接 {connecting.size} 台主机…
-                  </div>
+                    <LoaderCircle size={15} className="spin" />{tr("正在连接")}{" "}{connecting.size}{" "}{tr("台主机…")}</div>
                 )}
               </div>
             </section>
@@ -1259,7 +1228,7 @@ export default function App() {
                     className="resize-handle horizontal"
                     onPointerDown={(e) => dragDimension(e, "files")}
                     role="separator"
-                    aria-label="调整文件面板高度"
+                    aria-label={tr("调整文件面板高度")}
                     aria-orientation="horizontal"
                   />
                   <section
@@ -1275,8 +1244,8 @@ export default function App() {
                             if (
                               hasDirtyDrafts() &&
                               !(await confirmAction(
-                                "编辑器有未保存的修改。切换面板将暂时隐藏编辑器，返回文件面板可继续编辑。",
-                                "切换面板",
+                                tr("编辑器有未保存的修改。切换面板将暂时隐藏编辑器，返回文件面板可继续编辑。"),
+                                tr("切换面板"),
                               ))
                             )
                               return;
@@ -1284,18 +1253,18 @@ export default function App() {
                           }}
                         >
                           <item.icon size={14} />
-                          {item.name}
+                          {tr(item.name)}
                         </button>
                       ))}
                       <span className="flex-spacer" />
                       <IconButton
-                        title="隐藏工具面板"
+                        title={tr("隐藏工具面板")}
                         onClick={async () => {
                           if (
                             hasDirtyDrafts() &&
                             !(await confirmAction(
-                              "隐藏面板将放弃当前编辑器未保存的修改。",
-                              "隐藏面板",
+                              tr("隐藏面板将放弃当前编辑器未保存的修改。"),
+                              tr("隐藏面板"),
                             ))
                           )
                             return;
@@ -1338,34 +1307,33 @@ export default function App() {
         <div>
           <ShieldCheck size={12} />
           <span>
-            {sessions.filter((s) => s.status === "connected").length} 个连接
-          </span>
+            {sessions.filter((s) => s.status === "connected").length}{" "}{tr("个连接")}</span>
           <span className="status-separator" />
           {active ? (
             <>
               <span className={`status-dot ${active.status}`} />
               <span>
-                {active.local ? "本地 PTY" : "SSH"} ·{" "}
-                {labels[active.status] || active.status}
+                {active.local ? tr("本地 PTY") : "SSH"} ·{" "}
+                {labels[active.status] ? tr(labels[active.status]) : active.status}
               </span>
             </>
           ) : (
-            <span>{native ? "就绪" : "预览模式 · SSH 功能需桌面应用"}</span>
+            <span>{native ? tr("就绪") : tr("预览模式 · SSH 功能需桌面应用")}</span>
           )}
         </div>
         <div>
           <span>UTF-8</span>
           <span>xterm-256color</span>
           <IconButton
-            title="显示工具面板"
+            title={tr("显示工具面板")}
             active={workspace.filesVisible}
             onClick={async () => {
               if (
                 workspace.filesVisible &&
                 hasDirtyDrafts() &&
                 !(await confirmAction(
-                  "隐藏面板将放弃当前编辑器未保存的修改。",
-                  "隐藏面板",
+                  tr("隐藏面板将放弃当前编辑器未保存的修改。"),
+                  tr("隐藏面板"),
                 ))
               )
                 return;
@@ -1375,7 +1343,7 @@ export default function App() {
             <PanelBottom size={13} />
           </IconButton>
           <IconButton
-            title="显示监控面板"
+            title={tr("显示监控面板")}
             active={workspace.monitorVisible}
             onClick={() =>
               setWorkspace((w) => ({ ...w, monitorVisible: !w.monitorVisible }))
@@ -1397,7 +1365,7 @@ export default function App() {
           onSaved={() => {
             setHostDialog(undefined);
             void reloadHosts();
-            notify("连接已保存。", "success");
+            notify(tr("连接已保存。"), "success");
           }}
         />
       )}
@@ -1463,12 +1431,12 @@ export default function App() {
         />
       )}
       {palette && (
-        <Modal title="快速连接" onClose={() => setPalette(false)}>
+        <Modal title={tr("快速连接")} onClose={() => setPalette(false)}>
           <div className="palette-input">
             <Search size={18} />
             <input
               autoFocus
-              placeholder="输入主机名称、地址或用户名…"
+              placeholder={tr("输入主机名称、地址或用户名…")}
               value={paletteQuery}
               onChange={(e) => setPaletteQuery(e.target.value)}
             />
@@ -1501,16 +1469,16 @@ export default function App() {
             >
               <Plus size={17} />
               <span>
-                <strong>新建 SSH 连接</strong>
-                <small>添加服务器到工作台</small>
+                <strong>{tr("新建 SSH 连接")}</strong>
+                <small>{tr("添加服务器到工作台")}</small>
               </span>
               <kbd>⌘⇧N</kbd>
             </button>
             <button onClick={() => void openLocal()}>
               <TerminalSquare size={17} />
               <span>
-                <strong>打开本地终端</strong>
-                <small>使用本机默认 Shell</small>
+                <strong>{tr("打开本地终端")}</strong>
+                <small>{tr("使用本机默认 Shell")}</small>
               </span>
               <kbd>⌘⇧L</kbd>
             </button>
@@ -1519,55 +1487,43 @@ export default function App() {
       )}
       {help && (
         <Modal
-          title="使用指南"
-          subtitle="Shell EX · 快捷上手"
+          title={tr("使用指南")}
+          subtitle={tr("Shell EX · 快捷上手")}
           onClose={() => setHelp(false)}
         >
           <div className="help-list">
             <section>
               <span>01</span>
               <div>
-                <h3>添加并连接服务器</h3>
-                <p>
-                  保存主机地址与认证方式，双击主机连接。首次连接请核对服务器指纹，再输入凭据。
-                </p>
+                <h3>{tr("添加并连接服务器")}</h3>
+                <p>{tr("保存主机地址与认证方式，双击主机连接。首次连接请核对服务器指纹，再输入凭据。")}</p>
               </div>
             </section>
             <section>
               <span>02</span>
               <div>
-                <h3>终端与文件一起工作</h3>
-                <p>
-                  底部文件面板支持双击目录与文件。拖入本地文件开始上传；传输面板可查看进度、暂停和取消。
-                </p>
+                <h3>{tr("终端与文件一起工作")}</h3>
+                <p>{tr("底部文件面板支持双击目录与文件。拖入本地文件开始上传；传输面板可查看进度、暂停和取消。")}</p>
               </div>
             </section>
             <section>
               <span>03</span>
               <div>
-                <h3>配置自己的工作台</h3>
-                <p>
-                  拖动面板边界调整尺寸。连接多个终端后可左右或上下分屏。快捷命令支持参数模板。
-                </p>
+                <h3>{tr("配置自己的工作台")}</h3>
+                <p>{tr("拖动面板边界调整尺寸。连接多个终端后可左右或上下分屏。快捷命令支持参数模板。")}</p>
               </div>
             </section>
             <section>
               <span>04</span>
               <div>
-                <h3>备份与长期会话</h3>
-                <p>
-                  在设置中导出加密备份。网络断开后重连会创建新会话，持续运行的远程任务建议放入
-                  tmux。
-                </p>
+                <h3>{tr("备份与长期会话")}</h3>
+                <p>{tr("在设置中导出加密备份。网络断开后重连会创建新会话，持续运行的远程任务建议放入 tmux。")}</p>
               </div>
             </section>
           </div>
           <div className="info-note">
             <Command size={17} />
-            <p>
-              macOS 使用 ⌘ 快捷键；Windows 与 Linux 使用 Ctrl。终端中的 Ctrl+C
-              保持发送中断信号。
-            </p>
+            <p>{tr("macOS 使用 ⌘ 快捷键；Windows 与 Linux 使用 Ctrl。终端中的 Ctrl+C 保持发送中断信号。")}</p>
           </div>
         </Modal>
       )}
@@ -1583,7 +1539,7 @@ export default function App() {
             )}
             <span>{t.message}</span>
             <button
-              aria-label="关闭提示"
+              aria-label={tr("关闭提示")}
               onClick={() =>
                 setToasts((ts) => ts.filter((item) => item.id !== t.id))
               }
@@ -1606,7 +1562,7 @@ function CredentialPrompt({
   const [value, setValue] = useState("");
   return (
     <Modal
-      title={prompt.host.authMethod === "key" ? "私钥口令" : "登录凭据"}
+      title={prompt.host.authMethod === "key" ? tr("私钥口令") : tr("登录凭据")}
       subtitle={`${prompt.host.username}@${prompt.host.address}`}
       onClose={() => {
         setValue("");
@@ -1620,9 +1576,7 @@ function CredentialPrompt({
               setValue("");
               onDone(null);
             }}
-          >
-            取消
-          </button>
+          >{tr("取消")}</button>
           <button
             className="button primary"
             onClick={() => {
@@ -1633,19 +1587,17 @@ function CredentialPrompt({
               );
               setValue("");
             }}
-          >
-            连接
-          </button>
+          >{tr("连接")}</button>
         </>
       }
     >
       <Field
         label={
           prompt.host.authMethod === "key"
-            ? "私钥口令（未加密私钥可留空）"
-            : "密码"
+            ? tr("私钥口令（未加密私钥可留空）")
+            : tr("密码")
         }
-        hint="只用于本次连接，不会保存。需要自动登录可在基本信息中选择应用内加密密码库。"
+        hint={tr("只用于本次连接，不会保存。需要自动登录可在基本信息中选择应用内加密密码库。")}
       >
         <input
           autoFocus
@@ -1688,29 +1640,27 @@ function AuthDialog({
   }
   return (
     <Modal
-      title={request.name || "交互式认证"}
+      title={request.name || tr("交互式认证")}
       subtitle={
-        request.instructions || "请回答服务器的认证请求。回答不会保存。"
+        request.instructions || tr("请回答服务器的认证请求。回答不会保存。")
       }
       onClose={() => void onDone([])}
       footer={
         <>
-          <button className="button secondary" onClick={() => void onDone([])}>
-            取消认证
-          </button>
+          <button className="button secondary" onClick={() => void onDone([])}>{tr("取消认证")}</button>
           <button
             className="button primary"
             disabled={busy}
             onClick={() => void submit()}
           >
-            {busy ? <Busy /> : "提交认证"}
+            {busy ? <Busy /> : tr("提交认证")}
           </button>
         </>
       }
     >
       <div className="form-grid">
         {request.prompts.map((p, i) => (
-          <Field label={p.prompt || `认证信息 ${i + 1}`} key={i} full>
+          <Field label={p.prompt || tr("认证信息 {0}", i + 1)} key={i} full>
             <input
               type={p.echo ? "text" : "password"}
               autoComplete="off"

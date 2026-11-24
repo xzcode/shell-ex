@@ -1,3 +1,4 @@
+import { tr, getLanguagePreference, setLanguagePreference, type LanguagePreference } from "./i18n";
 import { useEffect, useState } from "react";
 import {
   Palette,
@@ -38,6 +39,7 @@ export function SettingsDialog({
   hosts: Host[];
 }) {
   const [form, setForm] = useState({ ...settings });
+  const [language, setLanguage] = useState<LanguagePreference>(getLanguagePreference);
   const [tab, setTab] = useState("appearance");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -84,6 +86,7 @@ export function SettingsDialog({
     setError("");
     try {
       await onSave(form);
+      setLanguagePreference(language);
       onClose();
     } catch (e) {
       setError(errorText(e));
@@ -101,14 +104,14 @@ export function SettingsDialog({
         );
         if (!path) return;
         await api("backup_export", { path, passphrase, includeCredentials });
-        notify("加密备份已保存。", "success");
+        notify(tr("加密备份已保存。"), "success");
       } else {
         const path = await chooseFile();
         if (typeof path !== "string") return;
         if (
           !(await confirmAction(
-            "将合并导入备份中的主机和配置。同 ID 的记录会更新。",
-            "导入加密备份",
+            tr("将合并导入备份中的主机和配置。同 ID 的记录会更新。"),
+            tr("导入加密备份"),
           ))
         )
           return;
@@ -116,7 +119,7 @@ export function SettingsDialog({
           path,
           passphrase,
         });
-        notify(`已导入 ${result.hosts} 台主机配置。`, "success");
+        notify(tr("已导入 {0} 台主机配置。", result.hosts), "success");
         onHostsChanged();
       }
       setBackup(null);
@@ -133,17 +136,17 @@ export function SettingsDialog({
       const { check } = await import("@tauri-apps/plugin-updater");
       const available = await check();
       if (!available) {
-        notify("已是当前更新通道的最新版本。", "success");
+        notify(tr("已是当前更新通道的最新版本。"), "success");
         return;
       }
       if (
         await confirmAction(
-          `检测到 ${available.version}。\n${available.body || ""}\n下载安装后请手动重启应用。`,
-          "发现新版本",
+          tr("检测到 {0}。\n{1}\n下载安装后请手动重启应用。", available.version, available.body || ""),
+          tr("发现新版本"),
         )
       ) {
         await available.downloadAndInstall();
-        notify("更新已安装。请保存工作后关闭并重新启动 Shell EX。", "success");
+        notify(tr("更新已安装。请保存工作后关闭并重新启动 Shell EX。"), "success");
       }
     } catch (e) {
       notify(errorText(e), "error");
@@ -154,8 +157,8 @@ export function SettingsDialog({
   return (
     <>
     <Modal
-      title="设置"
-      subtitle="让工作台适合你的使用习惯。"
+      title={tr("设置")}
+      subtitle={tr("让工作台适合你的使用习惯。")}
       onClose={onClose}
       wide
       footer={
@@ -163,15 +166,13 @@ export function SettingsDialog({
           <span className="footer-note">
             Shell EX · {update?.version || "0.3.2"}
           </span>
-          <button className="button secondary" onClick={onClose}>
-            取消
-          </button>
+          <button className="button secondary" onClick={onClose}>{tr("取消")}</button>
           <button
             className="button primary"
             disabled={busy}
             onClick={() => void save()}
           >
-            {busy ? <Busy /> : "保存设置"}
+            {busy ? <Busy /> : tr("保存设置")}
           </button>
         </>
       }
@@ -179,12 +180,12 @@ export function SettingsDialog({
       <div className="settings-layout">
         <nav className="settings-nav">
           {[
-            { id: "appearance", label: "外观", icon: Palette },
-            { id: "terminal", label: "终端", icon: TerminalSquare },
-            { id: "behavior", label: "工作台", icon: Settings2 },
-            { id: "security", label: "安全与凭据", icon: ShieldCheck },
-            { id: "data", label: "数据与备份", icon: Database },
-            { id: "about", label: "关于与更新", icon: RefreshCw },
+            { id: "appearance", label: tr("外观"), icon: Palette },
+            { id: "terminal", label: tr("终端"), icon: TerminalSquare },
+            { id: "behavior", label: tr("工作台"), icon: Settings2 },
+            { id: "security", label: tr("安全与凭据"), icon: ShieldCheck },
+            { id: "data", label: tr("数据与备份"), icon: Database },
+            { id: "about", label: tr("关于与更新"), icon: RefreshCw },
           ].map((t) => (
             <button
               key={t.id}
@@ -200,14 +201,23 @@ export function SettingsDialog({
           {error && <ErrorBox message={error} />}
           {tab === "appearance" && (
             <>
-              <h3>外观</h3>
-              <p className="section-description">清晰、克制的专业工作空间。</p>
+              <h3>{tr("外观")}</h3>
+              <div className="form-grid">
+                <Field label={tr("界面语言")} hint={tr("保存后切换界面语言，无需重启或断开 SSH 会话。")} full>
+                  <select value={language} onChange={(e) => setLanguage(e.target.value as LanguagePreference)}>
+                    <option value="system">{tr("跟随系统")}</option>
+                    <option value="zh-CN" lang="zh-CN">简体中文</option>
+                    <option value="en" lang="en">English</option>
+                  </select>
+                </Field>
+              </div>
+              <p className="section-description">{tr("清晰、克制的专业工作空间。")}</p>
               <div className="theme-options">
                 {([
-                  { id: "graphite", label: "石墨灰", hint: "柔和的专业深色" },
-                  { id: "mist", label: "雾光浅色", hint: "舒适的浅色界面" },
-                  { id: "aurora", label: "极光深色", hint: "青绿点缀的暗色" },
-                  { id: "light", label: "经典浅色", hint: "原版浅色配色" },
+                  { id: "graphite", label: tr("石墨灰"), hint: tr("柔和的专业深色") },
+                  { id: "mist", label: tr("雾光浅色"), hint: tr("舒适的浅色界面") },
+                  { id: "aurora", label: tr("极光深色"), hint: tr("青绿点缀的暗色") },
+                  { id: "light", label: tr("经典浅色"), hint: tr("原版浅色配色") },
                 ] as const).map((theme) => (
                   <button
                     className={`theme-card ${theme.id}${form.theme === theme.id || (form.theme === "dark" && theme.id === "graphite") ? " selected" : ""}`}
@@ -226,15 +236,15 @@ export function SettingsDialog({
               </div>
               <div className="info-note">
                 <Palette size={18} />
-                <p>主题会同时应用于工作台、终端和文件编辑器。</p>
+                <p>{tr("主题会同时应用于工作台、终端和文件编辑器。")}</p>
               </div>
             </>
           )}
           {tab === "terminal" && (
             <>
-              <h3>终端</h3>
+              <h3>{tr("终端")}</h3>
               <div className="form-grid">
-                <Field label="字号">
+                <Field label={tr("字号")}>
                   <input
                     type="number"
                     min={10}
@@ -243,7 +253,7 @@ export function SettingsDialog({
                     onChange={(e) => set("fontSize", +e.target.value)}
                   />
                 </Field>
-                <Field label="回滚行数">
+                <Field label={tr("回滚行数")}>
                   <input
                     type="number"
                     min={1000}
@@ -253,7 +263,7 @@ export function SettingsDialog({
                     onChange={(e) => set("scrollback", +e.target.value)}
                   />
                 </Field>
-                <Field label="等宽字体" full>
+                <Field label={tr("等宽字体")} full>
                   <input
                     value={form.fontFamily}
                     onChange={(e) => set("fontFamily", e.target.value)}
@@ -271,19 +281,19 @@ export function SettingsDialog({
               <Toggle
                 checked={form.confirmMultilinePaste}
                 onChange={(v) => set("confirmMultilinePaste", v)}
-                label="多行粘贴前确认"
-                description="避免剪贴板中的多条命令被意外执行。"
+                label={tr("多行粘贴前确认")}
+                description={tr("避免剪贴板中的多条命令被意外执行。")}
               />
             </>
           )}
           {tab === "behavior" && (
             <>
-              <h3>工作台</h3>
+              <h3>{tr("工作台")}</h3>
               <div className="form-grid">
                 <Field
-                  label="监控采样间隔（秒）"
+                  label={tr("监控采样间隔（秒）")}
                   full
-                  hint="不活跃窗口降低采样频率；监控失败不影响终端。"
+                  hint={tr("不活跃窗口降低采样频率；监控失败不影响终端。")}
                 >
                   <input
                     type="number"
@@ -293,7 +303,7 @@ export function SettingsDialog({
                     onChange={(e) => set("monitorInterval", +e.target.value)}
                   />
                 </Field>
-                <Field label="最大并行传输数" full>
+                <Field label={tr("最大并行传输数")} full>
                   <input
                     type="number"
                     min={1}
@@ -308,81 +318,74 @@ export function SettingsDialog({
               <Toggle
                 checked={form.autoReconnect}
                 onChange={(v) => set("autoReconnect", v)}
-                label="断线后自动尝试重连"
-                description="仅使用已保存凭据，重新核验指纹；创建新会话，不恢复原进程。"
+                label={tr("断线后自动尝试重连")}
+                description={tr("仅使用已保存凭据，重新核验指纹；创建新会话，不恢复原进程。")}
               />
               <div className="info-note">
                 <TerminalSquare size={18} />
-                <p>
-                  主机标签和面板布局会保留。启动后可一键重新打开上次工作区；远程任务连续运行建议使用
-                  tmux。
-                </p>
+                <p>{tr("主机标签和面板布局会保留。启动后可一键重新打开上次工作区；远程任务连续运行建议使用 tmux。")}</p>
               </div>
             </>
           )}
           {tab === "security" && (
             <>
-              <h3>安全与凭据</h3>
+              <h3>{tr("安全与凭据")}</h3>
               <div className="info-note">
                 <ShieldCheck size={20} />
-                <p>新连接默认使用 Shell EX 内置 AES-256-GCM 加密保存 SSH 密码，无需设置主密码或生成密钥文件。主机配置不含明文密码；已有连接仍按原有方式读取。</p>
+                <p>{tr("新连接默认使用 Shell EX 内置 AES-256-GCM 加密保存 SSH 密码，无需设置主密码或生成密钥文件。主机配置不含明文密码；已有连接仍按原有方式读取。")}</p>
               </div>
-              <h4>默认：内置 AES 加密保存</h4>
-              <p className="section-description">默认保存方式不需要额外操作。程序内置统一加密密钥，每条记录使用随机 nonce；具备程序副本和加密数据库的人仍可能还原密码，请保护电脑登录账户与应用数据。</p>
-              {vaultStatus?.initialized && <h4>旧版主密码库（兼容）</h4>}
+              <h4>{tr("默认：内置 AES 加密保存")}</h4>
+              <p className="section-description">{tr("默认保存方式不需要额外操作。程序内置统一加密密钥，每条记录使用随机 nonce；具备程序副本和加密数据库的人仍可能还原密码，请保护电脑登录账户与应用数据。")}</p>
+              {vaultStatus?.initialized && <h4>{tr("旧版主密码库（兼容）")}</h4>}
               {vaultStatus?.initialized && <>
               <div className="settings-list">
                 <div>
-                  <strong>密码库状态</strong>
+                  <strong>{tr("密码库状态")}</strong>
                   <span>{vaultStatus
-                    ? !vaultStatus.initialized ? "未创建"
-                      : vaultStatus.unlocked ? "已解锁" : "已锁定"
-                    : native ? "读取中" : "仅桌面应用可用"}</span>
+                    ? !vaultStatus.initialized ? tr("未创建")
+                      : vaultStatus.unlocked ? tr("已解锁") : tr("已锁定")
+                    : native ? tr("读取中") : tr("仅桌面应用可用")}</span>
                 </div>
                 <div>
-                  <strong>加密记录</strong>
-                  <span>{vaultStatus ? vaultStatus.count + " 项" : "—"}</span>
+                  <strong>{tr("加密记录")}</strong>
+                  <span>{vaultStatus ? vaultStatus.count + tr(" 项") : "—"}</span>
                 </div>
               </div>
               <div className="vault-settings-actions">
                 <button className="button secondary" disabled={!native}
                   onClick={() => setVaultDialog("access")}>
-                  <KeyRound size={14} />
-                  解锁旧版密码库
-                </button>
+                  <KeyRound size={14} />{tr("解锁旧版密码库")}</button>
                 <button className="button secondary"
                   disabled={!native || !vaultStatus?.unlocked}
                   onClick={async () => {
                     try {
                       await api("vault_lock");
                       await reloadVault();
-                      notify("应用内密码库已锁定。", "success");
+                      notify(tr("应用内密码库已锁定。"), "success");
                     } catch (e) { notify(errorText(e), "error"); }
-                  }}>锁定</button>
+                  }}>{tr("锁定")}</button>
                 <button className="button secondary"
                   disabled={!native || !vaultStatus?.initialized}
-                  onClick={() => setVaultDialog("change")}>修改主密码</button>
+                  onClick={() => setVaultDialog("change")}>{tr("修改主密码")}</button>
               </div>
-              <p className="section-description">仅旧版手动设置的主密码库需要解锁；默认自动加密库不会要求输入主密码。</p>
+              <p className="section-description">{tr("仅旧版手动设置的主密码库需要解锁；默认自动加密库不会要求输入主密码。")}</p>
               </>}
               <div className="settings-list">
                 <div>
-                  <strong>主机指纹校验</strong>
-                  <span className="green">始终开启</span>
+                  <strong>{tr("主机指纹校验")}</strong>
+                  <span className="green">{tr("始终开启")}</span>
                 </div>
                 <div>
-                  <strong>遥测与云账号</strong>
-                  <span>不启用</span>
+                  <strong>{tr("遥测与云账号")}</strong>
+                  <span>{tr("不启用")}</span>
                 </div>
                 <div>
-                  <strong>终端输入日志</strong>
-                  <span>不记录</span>
+                  <strong>{tr("终端输入日志")}</strong>
+                  <span>{tr("不记录")}</span>
                 </div>
               </div>
-              <h4>清除保存的凭据</h4>
-              <p className="section-description">
-                主机配置会保留，下次连接时重新输入密码。
-              </p>
+              <h4>{tr("清除保存的凭据")}</h4>
+              <p className="section-description">{tr("主机配置会保留，下次连接时重新输入密码。")}</p>
               {hosts.map((host) => (
                 <div className="credential-row" key={host.id}>
                   <KeyRound size={14} />
@@ -393,30 +396,26 @@ export function SettingsDialog({
                     onClick={async () => {
                       if (
                         !(await confirmAction(
-                          `清除“${host.name}”保存的密码与私钥口令？`,
+                          tr("清除“{0}”保存的密码与私钥口令？", host.name),
                         ))
                       )
                         return;
                       try {
                         await api("host_secret_delete", { id: host.id });
-                        notify("已清除保存的凭据。", "success");
+                        notify(tr("已清除保存的凭据。"), "success");
                       } catch (e) {
                         notify(errorText(e), "error");
                       }
                     }}
-                  >
-                    清除
-                  </button>
+                  >{tr("清除")}</button>
                 </div>
               ))}
             </>
           )}
           {tab === "data" && (
             <>
-              <h3>数据与备份</h3>
-              <p className="section-description">
-                加密备份用于迁移和恢复个人工作台。
-              </p>
+              <h3>{tr("数据与备份")}</h3>
+              <p className="section-description">{tr("加密备份用于迁移和恢复个人工作台。")}</p>
               <button
                 className="settings-action"
                 disabled={!native}
@@ -428,8 +427,8 @@ export function SettingsDialog({
               >
                 <Download size={19} />
                 <span>
-                  <strong>导出加密备份</strong>
-                  <small>主机、偏好与快捷命令；凭据默认不包含</small>
+                  <strong>{tr("导出加密备份")}</strong>
+                  <small>{tr("主机、偏好与快捷命令；凭据默认不包含")}</small>
                 </span>
               </button>
               <button
@@ -443,8 +442,8 @@ export function SettingsDialog({
               >
                 <Upload size={19} />
                 <span>
-                  <strong>导入加密备份</strong>
-                  <small>需要创建备份时使用的密码</small>
+                  <strong>{tr("导入加密备份")}</strong>
+                  <small>{tr("需要创建备份时使用的密码")}</small>
                 </span>
               </button>
               <button
@@ -458,12 +457,12 @@ export function SettingsDialog({
               >
                 <FileInput size={19} />
                 <span>
-                  <strong>导入 SSH 配置</strong>
-                  <small>粘贴 ~/.ssh/config，预览后选择导入</small>
+                  <strong>{tr("导入 SSH 配置")}</strong>
+                  <small>{tr("粘贴 ~/.ssh/config，预览后选择导入")}</small>
                 </span>
               </button>
               {!native && (
-                <p className="muted">文件导入、导出与凭据库需要桌面环境。</p>
+                <p className="muted">{tr("文件导入、导出与凭据库需要桌面环境。")}</p>
               )}
             </>
           )}
@@ -471,43 +470,41 @@ export function SettingsDialog({
             <div className="about">
               <div className="brand-mark large">›_</div>
               <h2>Shell EX</h2>
-              <p>你的服务器，你的工作台。</p>
+              <p>{tr("你的服务器，你的工作台。")}</p>
               <span className="version">v{update?.version || "0.1.0"}</span>
               <div className="settings-list">
                 <div>
-                  <span>运行环境</span>
-                  <strong>{native ? "桌面应用" : "浏览器界面预览"}</strong>
+                  <span>{tr("运行环境")}</span>
+                  <strong>{native ? tr("桌面应用") : tr("浏览器界面预览")}</strong>
                 </div>
                 <div>
-                  <span>框架</span>
+                  <span>{tr("框架")}</span>
                   <strong>Tauri · Rust · React</strong>
                 </div>
                 <div>
-                  <span>数据</span>
-                  <strong>本机优先</strong>
+                  <span>{tr("数据")}</span>
+                  <strong>{tr("本机优先")}</strong>
                 </div>
               </div>
               <p className="section-description">
                 {update?.configured
-                  ? "更新包需要通过签名验证。"
-                  : update?.reason ||
-                    "此构建未配置签名更新通道。可从项目发布页获取安装包。"}
+                  ? tr("更新包需要通过签名验证。")
+                  : (update?.reason ? tr(update.reason) : "") ||
+                    tr("此构建未配置签名更新通道。可从项目发布页获取安装包。")}
               </p>
               <button
                 className="button secondary"
                 disabled={!update?.configured || busy}
                 onClick={() => void checkUpdates()}
               >
-                <RefreshCw size={14} />
-                检查更新
-              </button>
+                <RefreshCw size={14} />{tr("检查更新")}</button>
             </div>
           )}
         </div>
       </div>
       {backup && (
         <Modal
-          title={backup === "export" ? "导出加密备份" : "导入加密备份"}
+          title={backup === "export" ? tr("导出加密备份") : tr("导入加密备份")}
           onClose={() => {
             setBackup(null);
             setPassphrase("");
@@ -521,9 +518,7 @@ export function SettingsDialog({
                   setBackup(null);
                   setPassphrase("");
                 }}
-              >
-                取消
-              </button>
+              >{tr("取消")}</button>
               <button
                 className="button primary"
                 disabled={busy || passphrase.length < 12}
@@ -532,17 +527,17 @@ export function SettingsDialog({
                 {busy ? (
                   <Busy />
                 ) : backup === "export" ? (
-                  "选择保存位置"
+                  tr("选择保存位置")
                 ) : (
-                  "选择备份文件"
+                  tr("选择备份文件")
                 )}
               </button>
             </>
           }
         >
           <Field
-            label="备份密码"
-            hint="至少 12 个字符。请妥善保存，遗失后无法恢复。"
+            label={tr("备份密码")}
+            hint={tr("至少 12 个字符。请妥善保存，遗失后无法恢复。")}
           >
             <input
               type="password"
@@ -555,8 +550,8 @@ export function SettingsDialog({
             <Toggle
               checked={includeCredentials}
               onChange={setIncludeCredentials}
-              label="同时包含保存的凭据"
-              description="默认关闭；启用后凭据将加密写入备份。"
+              label={tr("同时包含保存的凭据")}
+              description={tr("默认关闭；启用后凭据将加密写入备份。")}
             />
           )}
           {error && <ErrorBox message={error} />}
@@ -564,14 +559,14 @@ export function SettingsDialog({
       )}
       {importing && (
         <Modal
-          title="导入 SSH 配置"
-          subtitle="仅导入可安全识别的配置；不执行 ProxyCommand 或本地命令。"
+          title={tr("导入 SSH 配置")}
+          subtitle={tr("仅导入可安全识别的配置；不执行 ProxyCommand 或本地命令。")}
           onClose={() => setImporting(false)}
           wide
           footer={
             <>
               <span className="footer-note">
-                {preview ? `${preview.hosts.length} 个可导入连接` : ""}
+                {preview ? tr("{0} 个可导入连接", preview.hosts.length) : ""}
               </span>
               <button
                 className="button secondary"
@@ -588,9 +583,7 @@ export function SettingsDialog({
                   }
                 }}
                 disabled={!importText.trim() || busy}
-              >
-                解析预览
-              </button>
+              >{tr("解析预览")}</button>
               <button
                 className="button primary"
                 disabled={!preview?.hosts.length || busy}
@@ -599,7 +592,7 @@ export function SettingsDialog({
                   try {
                     await api("hosts_import", { hosts: preview!.hosts });
                     notify(
-                      `已导入 ${preview!.hosts.length} 台主机。`,
+                      tr("已导入 {0} 台主机。", preview!.hosts.length),
                       "success",
                     );
                     onHostsChanged();
@@ -610,9 +603,7 @@ export function SettingsDialog({
                     setBusy(false);
                   }
                 }}
-              >
-                导入连接
-              </button>
+              >{tr("导入连接")}</button>
             </>
           }
         >
@@ -655,7 +646,7 @@ export function SettingsDialog({
         onReady={() => {
           setVaultDialog(null);
           void reloadVault().catch((e) => notify(errorText(e), "error"));
-          notify("应用内密码库操作成功。", "success");
+          notify(tr("应用内密码库操作成功。"), "success");
         }}
       />
     )}

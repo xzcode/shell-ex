@@ -1,3 +1,4 @@
+import { tr, getLocale } from "./i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Activity, Cpu, MemoryStick, HardDrive, ArrowDown, ArrowUp,
@@ -14,7 +15,7 @@ function percentage(used: number, total: number): number {
 function duration(seconds: number): string {
   const d = Math.floor(seconds / 86400), h = Math.floor(seconds % 86400 / 3600);
   const m = Math.floor(seconds % 3600 / 60);
-  return d + "天 " + h + "时 " + m + "分";
+  return d + tr("天 ") + h + tr("时 ") + m + tr("分");
 }
 function MetricCard({ icon, label, percent, detail, status = "normal" }: {
   icon: ReactNode; label: string; percent: number | null;
@@ -23,7 +24,7 @@ function MetricCard({ icon, label, percent, detail, status = "normal" }: {
   return (
     <div className="monitor-metric-card">
       <div className="monitor-metric-heading"><span>{icon}{label}</span><strong>{percent == null ? "—" : percent.toFixed(1) + "%"}</strong></div>
-      <div className="monitor-bar" aria-label={label + "使用率"}><span
+      <div className="monitor-bar" aria-label={label + tr("使用率")}><span
         className={"monitor-bar-fill " + status}
         style={{ width: (percent ?? 0) + "%" }} /></div>
       <small>{detail}</small>
@@ -38,7 +39,7 @@ function NetworkChart({ samples }: { samples: { rx: number; tx: number }[] }) {
       (67 - item[name] / max * 59).toFixed(1)
     ).join(" ");
   return (
-    <svg className="monitor-network-chart" viewBox="0 0 300 72" preserveAspectRatio="none" role="img" aria-label="最近网络吞吐量趋势">
+    <svg className="monitor-network-chart" viewBox="0 0 300 72" preserveAspectRatio="none" role="img" aria-label={tr("最近网络吞吐量趋势")}>
       <path d="M0 8H300M0 38H300M0 67H300" fill="none" stroke="var(--border)" strokeWidth="0.7" />
       <polyline points={line("rx")} fill="none" stroke="var(--green)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
       <polyline points={line("tx")} fill="none" stroke="var(--amber)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
@@ -138,66 +139,66 @@ export function MonitorPanel({ session, settings, notify, onClose }: {
   const topProcesses = [...(snapshot?.processes || [])].sort((a, b) => b.cpu - a.cpu).slice(0, 5);
 
   return (
-    <aside className="monitor-panel" aria-label="服务器监控">
+    <aside className="monitor-panel" aria-label={tr("服务器监控")}>
       <header className="section-heading">
-        <span><Activity size={14} /> 实时监控</span>
+        <span><Activity size={14} />{" "}{tr("实时监控")}</span>
         <div>
-          <IconButton title="立即刷新" onClick={() => setRefresh((v) => v + 1)}><RefreshCw size={14} /></IconButton>
-          <IconButton title={paused ? "恢复监控" : "暂停监控"} active={paused}
+          <IconButton title={tr("立即刷新")} onClick={() => setRefresh((v) => v + 1)}><RefreshCw size={14} /></IconButton>
+          <IconButton title={paused ? tr("恢复监控") : tr("暂停监控")} active={paused}
             onClick={() => setPaused((v) => !v)}>
             {paused ? <Play size={13} /> : <Pause size={13} />}
           </IconButton>
-          <IconButton title="隐藏监控" onClick={onClose}><X size={14} /></IconButton>
+          <IconButton title={tr("隐藏监控")} onClick={onClose}><X size={14} /></IconButton>
         </div>
       </header>
       {!remote ? (
-        <Empty icon={<Activity size={25} />} title="等待 SSH 连接"
-          text="连接 Linux 服务器后显示实际采集的 CPU、内存、交换、网络、磁盘和进程数据。" />
+        <Empty icon={<Activity size={25} />} title={tr("等待 SSH 连接")}
+          text={tr("连接 Linux 服务器后显示实际采集的 CPU、内存、交换、网络、磁盘和进程数据。")} />
       ) : (
         <div className="monitor-body scroll-area">
           <div className="monitor-identity">
             <span className="status-dot connected" />
             <strong title={snapshot?.hostname || remote.name}>{snapshot?.hostname || remote.name}</strong>
             <span className="monitor-identity-protocol"><ShieldCheck size={12} /> SSH</span>
-            {lastUpdated && <small>最近采样 {new Date(lastUpdated).toLocaleTimeString("zh-CN")}</small>}
+            {lastUpdated && <small>{tr("最近采样")}{" "}{new Date(lastUpdated).toLocaleTimeString(getLocale())}</small>}
           </div>
           {error && <ErrorBox message={error} retry={() => setRefresh((r) => r + 1)} />}
           <div className="monitor-summary-grid">
             <section className="monitor-card">
-              <h4><Server size={13} /> 系统信息</h4>
+              <h4><Server size={13} />{" "}{tr("系统信息")}</h4>
               <dl>
-                <dt>系统</dt><dd title={snapshot?.os || ""}>{snapshot?.os || "正在读取…"}</dd>
-                <dt>内核</dt><dd title={snapshot?.kernel || ""}>{snapshot?.kernel || "—"}</dd>
-                <dt>CPU</dt><dd>{snapshot?.cpuCores ? snapshot.cpuCores + " 核" : "—"}</dd>
-                <dt>内存</dt><dd>{snapshot ? bytes(snapshot.memoryTotal) : "—"}</dd>
+                <dt>{tr("系统")}</dt><dd title={snapshot?.os || ""}>{snapshot?.os || tr("正在读取…")}</dd>
+                <dt>{tr("内核")}</dt><dd title={snapshot?.kernel || ""}>{snapshot?.kernel || "—"}</dd>
+                <dt>CPU</dt><dd>{snapshot?.cpuCores ? snapshot.cpuCores + tr(" 核") : "—"}</dd>
+                <dt>{tr("内存")}</dt><dd>{snapshot ? bytes(snapshot.memoryTotal) : "—"}</dd>
               </dl>
             </section>
             <section className="monitor-card">
-              <h4><Clock3 size={13} /> 运行状态</h4>
+              <h4><Clock3 size={13} />{" "}{tr("运行状态")}</h4>
               <div className="monitor-uptime">{snapshot ? duration(snapshot.uptime) : "—"}</div>
-              <h4 className="monitor-subtitle"><Gauge size={13} /> 负载（1/5/15 分钟）</h4>
+              <h4 className="monitor-subtitle"><Gauge size={13} />{" "}{tr("负载（1/5/15 分钟）")}</h4>
               <div className="monitor-load">{snapshot ? snapshot.load.map((n) => n.toFixed(2)).join(" / ") : "—"}</div>
             </section>
           </div>
           <div className="monitor-resource-grid">
             <MetricCard icon={<Cpu size={13} />} label="CPU" percent={cpu}
-              detail={cpu == null ? "等待下次采样" : "最近采样区间"} status={cpu != null && cpu >= 90 ? "danger" : "normal"} />
-            <MetricCard icon={<MemoryStick size={13} />} label="内存" percent={mem}
+              detail={cpu == null ? tr("等待下次采样") : tr("最近采样区间")} status={cpu != null && cpu >= 90 ? "danger" : "normal"} />
+            <MetricCard icon={<MemoryStick size={13} />} label={tr("内存")} percent={mem}
               detail={snapshot ? bytes(snapshot.memoryUsed) + " / " + bytes(snapshot.memoryTotal) : "—"}
               status={mem != null && mem >= 90 ? "danger" : mem != null && mem >= 80 ? "warn" : "normal"} />
-            <MetricCard icon={<Layers3 size={13} />} label="交换" percent={swap}
-              detail={snapshot ? snapshot.swapTotal ? bytes(snapshot.swapUsed || 0) + " / " + bytes(snapshot.swapTotal) : "未配置 Swap" : "—"}
+            <MetricCard icon={<Layers3 size={13} />} label={tr("交换")} percent={swap}
+              detail={snapshot ? snapshot.swapTotal ? bytes(snapshot.swapUsed || 0) + " / " + bytes(snapshot.swapTotal) : tr("未配置 Swap") : "—"}
               status={swap != null && swap >= 85 ? "warn" : "normal"} />
-            <MetricCard icon={<HardDrive size={13} />} label="根磁盘" percent={rootDisk}
+            <MetricCard icon={<HardDrive size={13} />} label={tr("根磁盘")} percent={rootDisk}
               detail={snapshot ? bytes(snapshot.diskUsed) + " / " + bytes(snapshot.diskTotal) : "—"}
               status={rootDisk != null && rootDisk >= 90 ? "danger" : rootDisk != null && rootDisk >= 80 ? "warn" : "normal"} />
           </div>
           <section className="monitor-card">
             <div className="monitor-card-heading">
-              <h4><Gauge size={13} /> CPU 近期趋势</h4>
-              <small className="muted">{cpuHistory.length ? cpuHistory.length + " 次采样" : "等待采样"}</small>
+              <h4><Gauge size={13} />{" "}{tr("CPU 近期趋势")}</h4>
+              <small className="muted">{cpuHistory.length ? cpuHistory.length + tr(" 次采样") : tr("等待采样")}</small>
             </div>
-            <svg className="monitor-cpu-chart" viewBox="0 0 300 46" preserveAspectRatio="none" role="img" aria-label="最近 CPU 使用率趋势">
+            <svg className="monitor-cpu-chart" viewBox="0 0 300 46" preserveAspectRatio="none" role="img" aria-label={tr("最近 CPU 使用率趋势")}>
               <path d="M0 1H300M0 23H300M0 45H300" fill="none" stroke="var(--border)" strokeWidth="0.7" />
               <polyline fill="none" stroke="var(--accent)" strokeWidth="2" vectorEffect="non-scaling-stroke"
                 points={cpuHistory.map((n, i) => (i / Math.max(1, cpuHistory.length - 1) * 300).toFixed(1) + "," + (45 - n / 100 * 44).toFixed(1)).join(" ")} />
@@ -205,28 +206,28 @@ export function MonitorPanel({ session, settings, notify, onClose }: {
           </section>
           <section className="monitor-card">
             <div className="monitor-card-heading">
-              <h4><Network size={13} /> 网络流量</h4>
+              <h4><Network size={13} />{" "}{tr("网络流量")}</h4>
               <select className="monitor-traffic-select" value={selectedInterface}
-                onChange={(e) => setSelectedInterface(e.target.value)} aria-label="网卡接口">
-                <option value="all">全接口</option>
+                onChange={(e) => setSelectedInterface(e.target.value)} aria-label={tr("网卡接口")}>
+                <option value="all">{tr("全接口")}</option>
                 {(snapshot?.networkInterfaces || []).map((v) =>
                   <option value={v.name} key={v.name}>{v.name}</option>)}
               </select>
             </div>
             <div className="monitor-network-values">
-              <span><ArrowDown size={13} className="green" /> 下载 <strong>{snapshot && networkHistory.length ? bytes(networkRate.rx) + "/s" : "采集中…"}</strong></span>
-              <span><ArrowUp size={13} className="accent" /> 上传 <strong>{snapshot && networkHistory.length ? bytes(networkRate.tx) + "/s" : "采集中…"}</strong></span>
+              <span><ArrowDown size={13} className="green" />{" "}{tr("下载")}{" "}<strong>{snapshot && networkHistory.length ? bytes(networkRate.rx) + "/s" : tr("采集中…")}</strong></span>
+              <span><ArrowUp size={13} className="accent" />{" "}{tr("上传")}{" "}<strong>{snapshot && networkHistory.length ? bytes(networkRate.tx) + "/s" : tr("采集中…")}</strong></span>
             </div>
             <NetworkChart samples={networkHistory} />
           </section>
           <section className="monitor-card">
             <div className="monitor-card-heading">
-              <h4><Cpu size={13} /> 进程（CPU 排序）</h4>
+              <h4><Cpu size={13} />{" "}{tr("进程（CPU 排序）")}</h4>
               <button className="text-button" onClick={() => setShowProcesses(true)}
-                disabled={!snapshot?.processes.length}>全部进程</button>
+                disabled={!snapshot?.processes.length}>{tr("全部进程")}</button>
             </div>
             <table className="monitor-process-mini">
-              <thead><tr><th>内存</th><th>CPU</th><th>命令</th></tr></thead>
+              <thead><tr><th>{tr("内存")}</th><th>CPU</th><th>{tr("命令")}</th></tr></thead>
               <tbody>
                 {topProcesses.map((p) => <tr key={p.pid}>
                   <td>{snapshot ? bytes(snapshot.memoryTotal * p.memory / 100) : "—"}</td>
@@ -235,12 +236,12 @@ export function MonitorPanel({ session, settings, notify, onClose }: {
                 </tr>)}
               </tbody>
             </table>
-            {!topProcesses.length && <small className="muted">暂无进程数据</small>}
+            {!topProcesses.length && <small className="muted">{tr("暂无进程数据")}</small>}
           </section>
           <section className="monitor-card">
-            <h4><HardDrive size={13} /> 磁盘挂载点</h4>
+            <h4><HardDrive size={13} />{" "}{tr("磁盘挂载点")}</h4>
             <div className="monitor-mount-table scroll-area">
-              <table><thead><tr><th>路径</th><th>可用 / 总量</th><th>已用</th></tr></thead>
+              <table><thead><tr><th>{tr("路径")}</th><th>{tr("可用 / 总量")}</th><th>{tr("已用")}</th></tr></thead>
                 <tbody>{mounts.map((mount, i) => {
                   const pct = percentage(mount.used, mount.total);
                   return <tr key={mount.path + i}>
@@ -256,28 +257,28 @@ export function MonitorPanel({ session, settings, notify, onClose }: {
           </section>
           <footer className="monitor-footer">
             <span className={"status-dot " + (paused ? "" : "connected")} />
-            {paused ? "采样已暂停" : "每 " + Math.max(2, settings.monitorInterval) + " 秒采样"}
-            {sampleDuration != null && <span title="SSH 命令执行和返回的总耗时，不是 ICMP Ping"> · 本次采样 {sampleDuration} ms</span>}
+            {paused ? tr("采样已暂停") : tr("每 ") + Math.max(2, settings.monitorInterval) + tr(" 秒采样")}
+            {sampleDuration != null && <span title={tr("SSH 命令执行和返回的总耗时，不是 ICMP Ping")}>{" "}{tr("· 本次采样")}{" "}{sampleDuration} ms</span>}
           </footer>
         </div>
       )}
       {showProcesses && snapshot && (
-        <Modal title={"进程 · " + snapshot.hostname} onClose={() => setShowProcesses(false)} wide>
+        <Modal title={tr("进程 · ") + snapshot.hostname} onClose={() => setShowProcesses(false)} wide>
           <div className="process-table scroll-area">
-            <table><thead><tr><th>PID</th><th>用户</th><th>CPU</th><th>内存</th><th>命令</th><th>操作</th></tr></thead>
+            <table><thead><tr><th>PID</th><th>{tr("用户")}</th><th>CPU</th><th>{tr("内存")}</th><th>{tr("命令")}</th><th>{tr("操作")}</th></tr></thead>
               <tbody>{snapshot.processes.map((p) => <tr key={p.pid}>
                 <td>{p.pid}</td><td>{p.user}</td><td>{p.cpu.toFixed(1)}%</td>
                 <td>{p.memory.toFixed(1)}%</td>
                 <td className="mono truncate" title={p.command}>{p.command}</td>
                 <td><button className="text-button red" onClick={async () => {
                   if (!remote || !(await confirmAction(
-                    "向 " + p.pid + " (" + p.command + ") 发送 TERM 信号？", "终止进程"))) return;
+                    tr("向 ") + p.pid + " (" + p.command + tr(") 发送 TERM 信号？"), tr("终止进程")))) return;
                   try {
                     await api("process_signal", { sessionId: remote.id, pid: p.pid, signal: "TERM" });
                     setRefresh((n) => n + 1);
-                    notify("TERM 信号已发送。", "success");
+                    notify(tr("TERM 信号已发送。"), "success");
                   } catch (e) { notify(errorText(e), "error"); }
-                }}>终止</button></td>
+                }}>{tr("终止")}</button></td>
               </tr>)}</tbody>
             </table>
           </div>

@@ -1,3 +1,4 @@
+import { tr } from "./i18n";
 import { useCallback, useEffect, useState } from "react";
 import Editor, { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
@@ -96,8 +97,8 @@ export default function RemoteEditor({
     if (!dirty) onClose();
     else
       void confirmAction(
-        "尚有未保存的修改。关闭将放弃这些修改。",
-        "关闭编辑器",
+        tr("尚有未保存的修改。关闭将放弃这些修改。"),
+        tr("关闭编辑器"),
       ).then((ok) => {
         if (ok) onClose();
       });
@@ -115,7 +116,7 @@ export default function RemoteEditor({
       });
       setFile(next);
       setText(next.text);
-      notify("文件已安全保存。", "success");
+      notify(tr("文件已安全保存。"), "success");
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -141,9 +142,7 @@ export default function RemoteEditor({
       footer={
         <>
           <span className="footer-note">
-            <FileCode2 size={13} /> UTF-8 · {file ? bytes(file.size) : "读取中"}{" "}
-            · 冲突检测已启用
-          </span>
+            <FileCode2 size={13} /> UTF-8 · {file ? bytes(file.size) : tr("读取中")}{" "}{tr("· 冲突检测已启用")}</span>
           <button
             className="button secondary"
             disabled={busy}
@@ -151,16 +150,14 @@ export default function RemoteEditor({
               if (
                 !dirty ||
                 (await confirmAction(
-                  "将放弃本地修改，重新读取远程文件。",
-                  "重新载入",
+                  tr("将放弃本地修改，重新读取远程文件。"),
+                  tr("重新载入"),
                 ))
               )
                 void load();
             }}
           >
-            <RefreshCw size={14} />
-            重新载入
-          </button>
+            <RefreshCw size={14} />{tr("重新载入")}</button>
           <button
             className="button secondary"
             disabled={!file || busy}
@@ -169,9 +166,7 @@ export default function RemoteEditor({
               setSaveAll(true);
             }}
           >
-            <SaveAll size={14} />
-            另存为
-          </button>
+            <SaveAll size={14} />{tr("另存为")}</button>
           <button
             className="button primary"
             disabled={!file || busy || !dirty}
@@ -181,8 +176,7 @@ export default function RemoteEditor({
               <Busy />
             ) : (
               <>
-                <Save size={14} />
-                保存 <kbd>⌘S</kbd>
+                <Save size={14} />{tr("保存")}{" "}<kbd>⌘S</kbd>
               </>
             )}
           </button>
@@ -216,28 +210,26 @@ export default function RemoteEditor({
         ) : error ? (
           <Empty
             icon={<FileCode2 size={24} />}
-            title="无法读取文件"
-            text="请检查文件大小、类型和访问权限。"
+            title={tr("无法读取文件")}
+            text={tr("请检查文件大小、类型和访问权限。")}
           />
         ) : (
           <div className="empty">
-            <Busy text="读取远程文件…" />
+            <Busy text={tr("读取远程文件…")} />
           </div>
         )}
       </div>
       {saveAs && (
         <Modal
-          title="另存为远程文件"
-          subtitle="仅写入不存在的新路径，已有文件不会被覆盖。"
+          title={tr("另存为远程文件")}
+          subtitle={tr("仅写入不存在的新路径，已有文件不会被覆盖。")}
           onClose={() => setSaveAll(false)}
           footer={
             <>
               <button
                 className="button secondary"
                 onClick={() => setSaveAll(false)}
-              >
-                取消
-              </button>
+              >{tr("取消")}</button>
               <button
                 className="button primary"
                 disabled={busy || !saveAsPath.trim()}
@@ -255,7 +247,7 @@ export default function RemoteEditor({
                     setText(next.text);
                     setTargetPath(next.path);
                     setSaveAll(false);
-                    notify("已保存为新文件。", "success");
+                    notify(tr("已保存为新文件。"), "success");
                   } catch (e) {
                     setError(errorText(e));
                   } finally {
@@ -263,12 +255,12 @@ export default function RemoteEditor({
                   }
                 }}
               >
-                {busy ? <Busy /> : "保存新文件"}
+                {busy ? <Busy /> : tr("保存新文件")}
               </button>
             </>
           }
         >
-          <Field label="远程路径">
+          <Field label={tr("远程路径")}>
             <input
               value={saveAsPath}
               onChange={(e) => setSaveAllPath(e.target.value)}

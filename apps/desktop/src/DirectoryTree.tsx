@@ -1,3 +1,4 @@
+import { tr } from "./i18n";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Folder, AlertCircle } from "lucide-react";
 import type { FileEntry } from "./types";
@@ -66,10 +67,9 @@ export function DirectoryTree({
     const children = nodes[parent];
     if (!children) return errors[parent] ? (
       <div className="folder-tree-error" title={errors[parent]}>
-        <AlertCircle size={12} /> 无法读取此目录
-        <button onClick={() => { void loadDir(parent); }}>重试</button>
+        <AlertCircle size={12} />{" "}{tr("无法读取此目录")}<button onClick={() => { void loadDir(parent); }}>{tr("重试")}</button>
       </div>
-    ) : <div className="folder-tree-loading">读取中…</div>;
+    ) : <div className="folder-tree-loading">{tr("读取中…")}</div>;
     return children.map((item) => (
       <div key={item.path}>
         <div className={`folder-tree-row${item.path === currentPath ? " selected" : ""}`}
@@ -86,7 +86,7 @@ export function DirectoryTree({
             if (e.key === "ArrowLeft" && expanded.has(item.path)) { e.preventDefault(); toggle(item.path); }
           }}
         >
-          <button aria-label={expanded.has(item.path) ? `收起 ${item.name}` : `展开 ${item.name}`}
+          <button aria-label={expanded.has(item.path) ? tr("收起 {0}", item.name) : tr("展开 {0}", item.name)}
             onClick={(e) => { e.stopPropagation(); toggle(item.path); }}>
             {expanded.has(item.path) ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           </button>
@@ -99,12 +99,12 @@ export function DirectoryTree({
   }
 
   return (
-    <aside className="directory-tree scroll-area" aria-label="远程目录树">
+    <aside className="directory-tree scroll-area" aria-label={tr("远程目录树")}>
       <div className={`folder-tree-row${currentPath === "/" ? " selected" : ""}`}
         role="treeitem" aria-expanded={expanded.has("/")} aria-selected={currentPath === "/"} tabIndex={0}
         onKeyDown={(e) => { if (e.key === "Enter") onNavigate("/"); }}
         onClick={() => onNavigate("/")}>
-        <button aria-label={expanded.has("/") ? "收起根目录" : "展开根目录"}
+        <button aria-label={expanded.has("/") ? tr("收起根目录") : tr("展开根目录")}
           onClick={(e) => { e.stopPropagation(); toggle("/"); }}>
           {expanded.has("/") ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </button>

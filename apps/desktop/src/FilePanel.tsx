@@ -1,3 +1,4 @@
+import { tr, getLocale } from "./i18n";
 import {
   lazy,
   Suspense,
@@ -153,8 +154,8 @@ export function FilePanel({
         if (
           exists &&
           !(await confirmAction(
-            `远程文件 ${joinPath(path, name)} 已存在。是否覆盖？`,
-            "覆盖远程文件",
+            tr("远程文件 {0} 已存在。是否覆盖？", joinPath(path, name)),
+            tr("覆盖远程文件"),
           ))
         )
           continue;
@@ -166,7 +167,7 @@ export function FilePanel({
           overwrite: exists,
         });
       }
-      notify("文件已加入传输队列。", "success");
+      notify(tr("文件已加入传输队列。"), "success");
       onTransfer();
     } catch (e) {
       notify(errorText(e), "error");
@@ -254,7 +255,7 @@ export function FilePanel({
       }>("transfer_start_directory", { planId: directoryPlan.id, conflict });
       setDirectoryPlan(null);
       notify(
-        `已加入 ${result.queued} 项传输，跳过 ${result.skipped} 项。`,
+        tr("已加入 {0} 项传输，跳过 {1} 项。", result.queued, result.skipped),
         result.errors.length ? "info" : "success",
       );
       if (result.errors.length)
@@ -276,8 +277,8 @@ export function FilePanel({
       const destination = await savePath(entry.name);
       if (!destination) return;
       const overwrite = await confirmAction(
-        `下载到：${destination}\n若该路径已有文件，完成后将替换它。`,
-        "确认下载路径",
+        tr("下载到：{0}\n若该路径已有文件，完成后将替换它。", destination),
+        tr("确认下载路径"),
       );
       if (!overwrite) return;
       await api("transfer_start", {
@@ -287,7 +288,7 @@ export function FilePanel({
         remotePath: entry.path,
         overwrite: true,
       });
-      notify("下载已加入传输队列。", "success");
+      notify(tr("下载已加入传输队列。"), "success");
       onTransfer();
     } catch (e) {
       notify(errorText(e), "error");
@@ -298,8 +299,8 @@ export function FilePanel({
     const targets = entries.filter((f) => selected.has(f.path));
     if (
       !(await confirmAction(
-        `将删除 ${targets.length} 项：\n${targets.map((f) => f.name).join("\n")}\n\n删除无法撤销。非空目录不会递归删除。`,
-        "删除远程文件",
+        tr("将删除 {0} 项：\n{1}\n\n删除无法撤销。非空目录不会递归删除。", targets.length, targets.map((f) => f.name).join("\n")),
+        tr("删除远程文件"),
       ))
     )
       return;
@@ -311,7 +312,7 @@ export function FilePanel({
           path: f.path,
           isDir: f.isDir,
         });
-      notify("已删除选中的项目。", "success");
+      notify(tr("已删除选中的项目。"), "success");
       await load();
     } catch (e) {
       notify(errorText(e), "error");
@@ -326,14 +327,14 @@ export function FilePanel({
     try {
       if (operation.kind === "mkdir") {
         if (!value || value.includes("/") || value === "." || value === "..")
-          throw new Error("请输入单个目录名称。");
+          throw new Error(tr("请输入单个目录名称。"));
         await api("sftp_mkdir", {
           sessionId: remote.id,
           path: joinPath(path, value),
         });
       } else if (operation.kind === "rename") {
         if (!value || value.includes("/") || value === "." || value === "..")
-          throw new Error("请输入单个文件名。");
+          throw new Error(tr("请输入单个文件名。"));
         await api("sftp_rename", {
           sessionId: remote.id,
           from: operation.entry!.path,
@@ -341,7 +342,7 @@ export function FilePanel({
         });
       } else {
         if (!/^[0-7]{3,4}$/.test(value))
-          throw new Error("权限应为三到四位八进制，例如 644、755。");
+          throw new Error(tr("权限应为三到四位八进制，例如 644、755。"));
         await api("sftp_chmod", {
           sessionId: remote.id,
           path: operation.entry!.path,
@@ -360,11 +361,11 @@ export function FilePanel({
     return (
       <Empty
         icon={<Folder size={25} />}
-        title={session?.local ? "本地终端已打开" : "远程文件"}
+        title={session?.local ? tr("本地终端已打开") : tr("远程文件")}
         text={
           session?.local
-            ? "连接 SSH 服务器后，在这里管理远程文件。"
-            : "连接服务器后，安全浏览、传输和编辑文件。"
+            ? tr("连接 SSH 服务器后，在这里管理远程文件。")
+            : tr("连接服务器后，安全浏览、传输和编辑文件。")
         }
       />
     );
@@ -377,10 +378,10 @@ export function FilePanel({
   return (
     <div className="file-panel" ref={panel}>
       <div className="panel-toolbar">
-        <IconButton title="上一级" onClick={() => navigate(parentPath(path))}>
+        <IconButton title={tr("上一级")} onClick={() => navigate(parentPath(path))}>
           <ArrowUp size={15} />
         </IconButton>
-        <IconButton title="用户主目录" onClick={() => navigate(".")}>
+        <IconButton title={tr("用户主目录")} onClick={() => navigate(".")}>
           <Home size={15} />
         </IconButton>
         <form
@@ -392,16 +393,16 @@ export function FilePanel({
         >
           <Folder size={14} />
           <input
-            aria-label="远程目录"
+            aria-label={tr("远程目录")}
             value={inputPath}
             onChange={(e) => setInputPath(e.target.value)}
           />
-          <button title="打开目录">
+          <button title={tr("打开目录")}>
             <ChevronRight size={14} />
           </button>
         </form>
         <IconButton
-          title="刷新文件列表"
+          title={tr("刷新文件列表")}
           onClick={() => void load()}
           disabled={loading}
         >
@@ -409,18 +410,16 @@ export function FilePanel({
         </IconButton>
         <span className="toolbar-separator" />
         <button className="button subtle small" onClick={() => void upload()}>
-          <Upload size={14} />
-          上传
-        </button>
+          <Upload size={14} />{tr("上传")}</button>
         <IconButton
-          title="上传文件夹"
+          title={tr("上传文件夹")}
           disabled={working}
           onClick={() => void planDirectory("upload")}
         >
           <FolderUp size={15} />
         </IconButton>
         <IconButton
-          title="新建目录"
+          title={tr("新建目录")}
           onClick={() => {
             setOperation({ kind: "mkdir" });
             setValue("");
@@ -429,14 +428,14 @@ export function FilePanel({
           <FolderPlus size={15} />
         </IconButton>
         <IconButton
-          title="下载选中的文件或目录"
+          title={tr("下载选中的文件或目录")}
           disabled={chosen.length !== 1 || working}
           onClick={() => void download(chosen[0])}
         >
           <Download size={15} />
         </IconButton>
         <IconButton
-          title="重命名"
+          title={tr("重命名")}
           disabled={chosen.length !== 1}
           onClick={() => {
             setOperation({ kind: "rename", entry: chosen[0] });
@@ -446,7 +445,7 @@ export function FilePanel({
           <Pencil size={14} />
         </IconButton>
         <IconButton
-          title="修改权限"
+          title={tr("修改权限")}
           disabled={chosen.length !== 1}
           onClick={() => {
             setOperation({ kind: "chmod", entry: chosen[0] });
@@ -456,7 +455,7 @@ export function FilePanel({
           <Shield size={14} />
         </IconButton>
         <IconButton
-          title="删除选中项目"
+          title={tr("删除选中项目")}
           disabled={!chosen.length || working}
           danger
           onClick={() => void remove()}
@@ -474,7 +473,7 @@ export function FilePanel({
             <tr>
               <th className="check-cell">
                 <input
-                  aria-label="全选文件"
+                  aria-label={tr("全选文件")}
                   type="checkbox"
                   checked={
                     filtered.length > 0 &&
@@ -489,12 +488,12 @@ export function FilePanel({
                   }
                 />
               </th>
-              <th>文件名</th>
-              <th>大小</th>
-              <th>类型</th>
-              <th>修改时间</th>
-              <th>权限</th>
-              <th>用户/用户组</th>
+              <th>{tr("文件名")}</th>
+              <th>{tr("大小")}</th>
+              <th>{tr("类型")}</th>
+              <th>{tr("修改时间")}</th>
+              <th>{tr("权限")}</th>
+              <th>{tr("用户/用户组")}</th>
             </tr>
           </thead>
           <tbody>
@@ -510,7 +509,7 @@ export function FilePanel({
                 <td className="check-cell" onClick={(e) => e.stopPropagation()}>
                   <input
                     type="checkbox"
-                    aria-label={`选择 ${entry.name}`}
+                    aria-label={tr("选择 {0}", entry.name)}
                     checked={selected.has(entry.path)}
                     onChange={(e) =>
                       setSelected((old) => {
@@ -537,10 +536,10 @@ export function FilePanel({
                   <span>{entry.name}</span>
                 </td>
                 <td>{entry.isDir ? "—" : bytes(entry.size)}</td>
-                <td>{entry.isSymlink ? "符号链接" : entry.isDir ? "文件夹" : "文件"}</td>
+                <td>{entry.isSymlink ? tr("符号链接") : entry.isDir ? tr("文件夹") : tr("文件")}</td>
                 <td>
                   {entry.modified
-                    ? new Date(entry.modified * 1000).toLocaleString("zh-CN", {
+                    ? new Date(entry.modified * 1000).toLocaleString(getLocale(), {
                         year: "numeric", month: "2-digit", day: "2-digit",
                         hour: "2-digit", minute: "2-digit",
                       })
@@ -555,19 +554,18 @@ export function FilePanel({
           </tbody>
         </table>
         {!loading && !error && !filtered.length && (
-          <div className="table-empty">此目录没有可显示的文件</div>
+          <div className="table-empty">{tr("此目录没有可显示的文件")}</div>
         )}
         </div>
       </div>
       <div className="panel-foot">
         <span>
-          {filtered.length} 项
-          {selected.size ? ` · 已选择 ${selected.size} 项` : ""}
+          {filtered.length}{" "}{tr("项")}{selected.size ? tr(" · 已选择 {0} 项", selected.size) : ""}
         </span>
         <input
           className="inline-filter"
-          aria-label="筛选文件"
-          placeholder="筛选文件…"
+          aria-label={tr("筛选文件")}
+          placeholder={tr("筛选文件…")}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
@@ -576,68 +574,64 @@ export function FilePanel({
             type="checkbox"
             checked={showHidden}
             onChange={(e) => setShowHidden(e.target.checked)}
-          />
-          显示隐藏文件
-        </label>
+          />{tr("显示隐藏文件")}</label>
       </div>
       {directoryPlan && (
         <Modal
-          title="目录传输预览"
-          subtitle="按计划逐个传输文件，符号链接不会跟随。"
+          title={tr("目录传输预览")}
+          subtitle={tr("按计划逐个传输文件，符号链接不会跟随。")}
           onClose={() => setDirectoryPlan(null)}
           footer={
             <>
               <button
                 className="button secondary"
                 onClick={() => setDirectoryPlan(null)}
-              >
-                取消
-              </button>
+              >{tr("取消")}</button>
               <button
                 className="button primary"
                 disabled={working}
                 onClick={() => void startDirectory()}
               >
-                {working ? <Busy /> : "开始传输"}
+                {working ? <Busy /> : tr("开始传输")}
               </button>
             </>
           }
         >
           <div className="settings-list">
             <div>
-              <span>本地目录</span>
+              <span>{tr("本地目录")}</span>
               <strong className="mono">{directoryPlan.localRoot}</strong>
             </div>
             <div>
-              <span>远程目录</span>
+              <span>{tr("远程目录")}</span>
               <strong className="mono">{directoryPlan.remoteRoot}</strong>
             </div>
             <div>
-              <span>文件数量</span>
+              <span>{tr("文件数量")}</span>
               <strong>{directoryPlan.totalFiles}</strong>
             </div>
             <div>
-              <span>总大小</span>
+              <span>{tr("总大小")}</span>
               <strong>{bytes(directoryPlan.totalBytes)}</strong>
             </div>
             <div>
-              <span>目标已存在</span>
+              <span>{tr("目标已存在")}</span>
               <strong>{directoryPlan.existingFiles}</strong>
             </div>
             <div>
-              <span>跳过的链接</span>
+              <span>{tr("跳过的链接")}</span>
               <strong>{directoryPlan.skippedLinks.length}</strong>
             </div>
           </div>
-          <Field label="遇到同名文件">
+          <Field label={tr("遇到同名文件")}>
             <select
               value={conflict}
               onChange={(e) =>
                 setConflict(e.target.value as "skip" | "overwrite")
               }
             >
-              <option value="skip">跳过已有文件（保留目标内容）</option>
-              <option value="overwrite">覆盖已有文件</option>
+              <option value="skip">{tr("跳过已有文件（保留目标内容）")}</option>
+              <option value="overwrite">{tr("覆盖已有文件")}</option>
             </select>
           </Field>
         </Modal>
@@ -645,7 +639,7 @@ export function FilePanel({
       {operation && (
         <Modal
           title={
-            { mkdir: "新建目录", rename: "重命名", chmod: "修改权限" }[
+            { mkdir: tr("新建目录"), rename: tr("重命名"), chmod: tr("修改权限") }[
               operation.kind
             ]
           }
@@ -655,24 +649,22 @@ export function FilePanel({
               <button
                 className="button secondary"
                 onClick={() => setOperation(null)}
-              >
-                取消
-              </button>
+              >{tr("取消")}</button>
               <button
                 className="button primary"
                 onClick={() => void applyOperation()}
                 disabled={working || !value}
               >
-                {working ? <Busy /> : "确认"}
+                {working ? <Busy /> : tr("确认")}
               </button>
             </>
           }
         >
           <Field
-            label={operation.kind === "chmod" ? "八进制权限" : "名称"}
+            label={operation.kind === "chmod" ? tr("八进制权限") : tr("名称")}
             hint={
               operation.kind === "chmod"
-                ? "644：所有者可读写，其他人可读。755：所有者可读写执行，其他人可读执行。"
+                ? tr("644：所有者可读写，其他人可读。755：所有者可读写执行，其他人可读执行。")
                 : undefined
             }
           >
@@ -691,7 +683,7 @@ export function FilePanel({
         <Suspense
           fallback={
             <div className="editor-loading">
-              <Busy text="正在加载编辑器…" />
+              <Busy text={tr("正在加载编辑器…")} />
             </div>
           }
         >

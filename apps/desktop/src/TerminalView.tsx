@@ -1,3 +1,4 @@
+import { tr } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -177,9 +178,9 @@ export function TerminalView({
         )
           return;
         t.options.disableStdin = true;
-        const detail = `终端输出确认失败：${errorText(cause)}`;
+        const detail = tr("终端输出确认失败：{0}", errorText(cause));
         t.write(
-          `\r\n\x1b[31m[${detail.replace(/[\x00-\x1f\x7f]/g, " ")}。会话将关闭，请重新连接。]\x1b[0m\r\n`,
+          tr("\r\n\u001b[31m[{0}。会话将关闭，请重新连接。]\u001b[0m\r\n", detail.replace(/[\x00-\x1f\x7f]/g, " ")),
         );
         current.current.onTransportFailure(session.id, detail);
       },
@@ -203,7 +204,7 @@ export function TerminalView({
         });
       } else if (event.type === "exit") {
         t.write(
-          `\r\n\x1b[90m[会话已结束${event.code == null ? "" : `，退出码 ${event.code}`}；重新连接会建立新会话]\x1b[0m\r\n`,
+          tr("\r\n\u001b[90m[会话已结束{0}；重新连接会建立新会话]\u001b[0m\r\n", event.code == null ? "" : tr("，退出码 {0}", event.code)),
         );
       } else if (event.type === "state" && event.message) {
         t.write(
@@ -247,8 +248,8 @@ export function TerminalView({
         /[\r\n]/.test(value)
       ) {
         void confirmAction(
-          `粘贴包含 ${value.split(/\r?\n/).length} 行内容，可能直接执行多条命令。\n\n${value.slice(0, 600)}${value.length > 600 ? "…" : ""}`,
-          "确认多行粘贴",
+          tr("粘贴包含 {0} 行内容，可能直接执行多条命令。\n\n{1}{2}", value.split(/\r?\n/).length, value.slice(0, 600), value.length > 600 ? "…" : ""),
+          tr("确认多行粘贴"),
         ).then((ok) => {
           if (ok && !disposed) t.paste(value);
         });
@@ -310,7 +311,7 @@ export function TerminalView({
           <input
             ref={input}
             value={query}
-            placeholder="在终端中查找"
+            placeholder={tr("在终端中查找")}
             onChange={(e) => {
               setQuery(e.target.value);
               search.current?.findNext(e.target.value);
@@ -327,7 +328,7 @@ export function TerminalView({
             }}
           />
           <IconButton
-            title="上一个"
+            title={tr("上一个")}
             onClick={() => {
               search.current?.findPrevious(query);
             }}
@@ -335,14 +336,14 @@ export function TerminalView({
             <ChevronUp size={15} />
           </IconButton>
           <IconButton
-            title="下一个"
+            title={tr("下一个")}
             onClick={() => {
               search.current?.findNext(query);
             }}
           >
             <ChevronDown size={15} />
           </IconButton>
-          <IconButton title="关闭搜索" onClick={() => setSearching(false)}>
+          <IconButton title={tr("关闭搜索")} onClick={() => setSearching(false)}>
             <X size={15} />
           </IconButton>
         </div>
