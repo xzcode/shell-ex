@@ -3,10 +3,10 @@ use serde::Serialize;
 use shell_ex_core::{
     backup,
     credentials::{CredentialVault, RoutedVault},
-    local_vault::{LocalVault, VaultStatus},
     docker::{ContainerInfo, DockerImage, DockerService},
     error::{AppError, Result},
     files::{EditorFile, FileEntry, FileService},
+    local_vault::{LocalVault, VaultStatus},
     models::*,
     monitor::{MonitorService, MonitorSnapshot},
     pty::PtyManager,
@@ -279,148 +279,9 @@ mod terminal_delivery_tests {
                 24,
                 sink(
                     Channel::new(|_| Err(tauri::Error::FailedToReceiveMessage)),
-                    SessionOwner::Local(Arc::downgrade(&manager)),
-                ),
-            )
-            .unwrap();
-        tokio::time::timeout(Duration::from_secs(5), async {
-            while manager.resize(&failed, 81, 25).is_ok() {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .unwrap();
-        manager.resize(&other, 82, 26).unwrap();
-        manager.close(&other).unwrap();
-    }
-}
-
-#[tauri::command]
-fn hosts_list(state: State<'_, AppState>) -> Result<Vec<Host>> {
-    state.store.hosts()
-}
-#[tauri::command]
-async fn host_save(
-    state: State<'_, AppState>,
-    mut host: Host,
-    secret: Option<SecretInput>,
-    remember_secret: bool,
-) -> Result<Host> {
-    if host.id.is_empty() {
-        host.id = uuid::Uuid::new_v4().to_string();
-    }
-    shell_ex_core::storage::validate_host(&host)?;
-    let store = state.store.clone();
-    let vault = state.vault.clone();
-    let mutation = state.mutation.clone();
-    tokio::task::spawn_blocking(move || {
-        let _guard = mutation.lock().map_err(AppError::internal)?;
-        let old = store.host(&host.id).ok();
-        let changing = old.as_ref().is_some_and(|h| h.credential_store != host.credential_store);
-        let has_secret = secret.as_ref().is_some_and(|s| {
-            s.password.as_ref().is_some_and(|p| !p.is_empty())
-                || s.passphrase.as_ref().is_some_and(|p| !p.is_empty())
-        });
-        let next_secret = if host.credential_store == "session" {
-            None
-        } else if remember_secret && has_secret {
-            secret
-        } else if changing {
-            // Migration is explicit; copy old Keychain/local secret before switching.
-            match old.as_ref() {
-                Some(previous_host) => vault.get_for_host(previous_host)?,
-                None => None,
-            }
-        } else {
-            None
-        };
-        let previous_target = if next_secret.is_some() {
-            Some(vault.get_for_host(&host)?)
-        } else {
-            None
-        };
-        if let Some(secret) = next_secret.as_ref() {
-            vault.set_for_host(&host, secret)?;
-        }
-        let saved = match store.save_host(host.clone()) {
-            Ok(saved) => saved,
-            Err(error) => {
-                if let Some(previous) = previous_target {
-                    let restored = match previous {
-                        Some(s) => vault.set_for_host(&host, &s),
-                        None => vault.delete_for_host(&host),
-                    };
-                    if restored.is_err() {
-                        return Err(AppError::new(
-                            "CREDENTIAL_ROLLBACK_FAILED",
-                            "保存主机失败且新凭据回滚失败，请检查密码库后重试。",
-                        ));
-                    }
-                }
-                return Err(error);
-            }
-        };
-        if changing {
-            if let Some(previous_host) = old.as_ref() {
-                if let Err(e) = vault.delete_for_host(previous_host) {
-                    let host_restored = store.save_host(previous_host.clone());
-                    let secret_restored = match previous_target {
-                        Some(Some(s)) => vault.set_for_host(&host, &s),
-                        Some(None) => vault.delete_for_host(&host),
-                        None => Ok(()),
-                    };
-                    if host_restored.is_err() || secret_restored.is_err() {
-                        return Err(AppError::new(
-                            "CREDENTIAL_ROLLBACK_FAILED",
-                            "切换凭据存储失败且回滚不完整；请检查旧凭据位置。",
-                        ));
-                    }
-                    return Err(e);
-                }
-            }
-        }
-        Ok(saved)
-    })
-    .await
-    .map_err(join_error)?
-}
-#[tauri::command]
-async fn host_delete(state: State<'_, AppState>, id: String) -> Result<()> {
-    if state.ssh.get_by_host(&id).await.is_some() {
-        return Err(AppError::new("HOST_CONNECTED", "请先关闭该主机的连接"));
-    }
-    let store = state.store.clone();
-    let vault = state.vault.clone();
-    let mutation = state.mutation.clone();
-    tokio::task::spawn_blocking(move || {
-        let _guard = mutation.lock().map_err(AppError::internal)?;
-        let host = store.host(&id)?;
-        store.delete_host(&id)?;
-        if let Err(e) = vault.delete_for_host(&host) {
-            store.save_host(host)?;
-            return Err(e);
-        }
-        Ok(())
-    })
-    .await
-    .map_err(join_error)?
-}
-#[tauri::command]
-async fn host_secret_status(state: State<'_, AppState>, id: String) -> Result<bool> {
-    let host = state.store.host(&id)?;
-    let vault = state.vault.clone();
-    tokio::task::spawn_blocking(move || vault.get_for_host(&host).map(|v| v.is_some()))
-        .await
-        .map_err(join_error)?
-}
-#[tauri::command]
-async fn host_secret_delete(state: State<'_, AppState>, id: String) -> Result<()> {
-    let host = state.store.host(&id)?;
-    let vault = state.vault.clone();
-    let mutation = state.mutation.clone();
-    tokio::task::spawn_blocking(move || {
-        let _guard = mutation.lock().map_err(AppError::internal)?;
-        vault.delete_for_host(&host)
+ 
+[... 5336 bytes omitted ...]
+elete_for_host(&host)
     })
     .await
     .map_err(join_error)?
@@ -1095,3 +956,4 @@ pub fn run() {
         }
     });
 }
+

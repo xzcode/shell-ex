@@ -24,7 +24,9 @@ pub struct Host {
     pub color: String,
     pub notes: String,
 }
-pub fn default_credential_store() -> String { "system".into() }
+pub fn default_credential_store() -> String {
+    "system".into()
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProxyConfig {
@@ -145,3 +147,4 @@ impl Default for Workspace {
         }
     }
 }
+

@@ -321,7 +321,10 @@ pub fn validate_host(h: &Host) -> Result<()> {
         ));
     }
     if !["system", "local", "session"].contains(&h.credential_store.as_str()) {
-        return Err(AppError::new("INVALID_CREDENTIAL_STORE", "请选择应用内加密库、系统凭据库或仅本次使用"));
+        return Err(AppError::new(
+            "INVALID_CREDENTIAL_STORE",
+            "请选择应用内加密库、系统凭据库或仅本次使用",
+        ));
     }
     if !["password", "key", "agent", "interactive"].contains(&h.auth_method.as_str()) {
         return Err(AppError::new("INVALID_AUTH", "不支持的认证方式"));
@@ -489,3 +492,4 @@ mod tests {
         assert!(store.hosts().unwrap().is_empty());
     }
 }
+

@@ -65,26 +65,41 @@ pub struct RoutedVault {
 }
 impl RoutedVault {
     pub fn new(store: Arc<Storage>, local: Arc<LocalVault>) -> Self {
-        Self { store, local, system: SystemVault }
+        Self {
+            store,
+            local,
+            system: SystemVault,
+        }
     }
     fn host(&self, id: &str) -> Result<Host> {
         self.store.host(id)
     }
-    pub fn local(&self) -> &LocalVault { &self.local }
+    pub fn local(&self) -> &LocalVault {
+        &self.local
+    }
     pub fn get_by_mode(&self, id: &str, mode: &str) -> Result<Option<SecretInput>> {
         match mode {
             "local" => self.local.get(id),
             "system" => self.system.get(id),
             "session" => Ok(None),
-            _ => Err(AppError::new("INVALID_CREDENTIAL_STORE", "不支持的凭据存储位置")),
+            _ => Err(AppError::new(
+                "INVALID_CREDENTIAL_STORE",
+                "不支持的凭据存储位置",
+            )),
         }
     }
     pub fn set_by_mode(&self, id: &str, mode: &str, secret: &SecretInput) -> Result<()> {
         match mode {
             "local" => self.local.set(id, secret),
             "system" => self.system.set(id, secret),
-            "session" => Err(AppError::new("SESSION_ONLY", "仅本次使用模式不能持久保存密码")),
-            _ => Err(AppError::new("INVALID_CREDENTIAL_STORE", "不支持的凭据存储位置")),
+            "session" => Err(AppError::new(
+                "SESSION_ONLY",
+                "仅本次使用模式不能持久保存密码",
+            )),
+            _ => Err(AppError::new(
+                "INVALID_CREDENTIAL_STORE",
+                "不支持的凭据存储位置",
+            )),
         }
     }
     pub fn delete_by_mode(&self, id: &str, mode: &str) -> Result<()> {
@@ -92,7 +107,10 @@ impl RoutedVault {
             "local" => self.local.delete(id),
             "system" => self.system.delete(id),
             "session" => Ok(()),
-            _ => Err(AppError::new("INVALID_CREDENTIAL_STORE", "不支持的凭据存储位置")),
+            _ => Err(AppError::new(
+                "INVALID_CREDENTIAL_STORE",
+                "不支持的凭据存储位置",
+            )),
         }
     }
 }
@@ -119,3 +137,4 @@ impl CredentialVault for RoutedVault {
         self.delete_by_mode(&host.id, &host.credential_store)
     }
 }
+

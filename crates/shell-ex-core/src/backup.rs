@@ -263,3 +263,4 @@ mod tests {
         assert!(unseal(&encrypted, "correct horse battery").is_err());
     }
 }
+
