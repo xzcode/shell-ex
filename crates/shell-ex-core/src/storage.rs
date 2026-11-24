@@ -320,7 +320,7 @@ pub fn validate_host(h: &Host) -> Result<()> {
             "请检查名称、地址、端口与用户名",
         ));
     }
-    if !["system", "local", "session"].contains(&h.credential_store.as_str()) {
+    if !["auto", "system", "local", "session"].contains(&h.credential_store.as_str()) {
         return Err(AppError::new(
             "INVALID_CREDENTIAL_STORE",
             "请选择应用内加密库、系统凭据库或仅本次使用",

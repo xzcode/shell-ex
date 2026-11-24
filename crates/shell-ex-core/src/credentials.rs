@@ -1,5 +1,6 @@
 use crate::{
     error::{AppError, Result},
+    auto_vault::AutoVault,
     local_vault::LocalVault,
     models::{Host, SecretInput},
     storage::Storage,
@@ -61,13 +62,19 @@ impl CredentialVault for SystemVault {
 pub struct RoutedVault {
     store: Arc<Storage>,
     local: Arc<LocalVault>,
+    automatic: Arc<AutoVault>,
     system: SystemVault,
 }
 impl RoutedVault {
-    pub fn new(store: Arc<Storage>, local: Arc<LocalVault>) -> Self {
+    pub fn new(
+        store: Arc<Storage>,
+        local: Arc<LocalVault>,
+        automatic: Arc<AutoVault>,
+    ) -> Self {
         Self {
             store,
             local,
+            automatic,
             system: SystemVault,
         }
     }
@@ -77,8 +84,12 @@ impl RoutedVault {
     pub fn local(&self) -> &LocalVault {
         &self.local
     }
+    pub fn automatic(&self) -> &AutoVault {
+        &self.automatic
+    }
     pub fn get_by_mode(&self, id: &str, mode: &str) -> Result<Option<SecretInput>> {
         match mode {
+            "auto" => self.automatic.get(id),
             "local" => self.local.get(id),
             "system" => self.system.get(id),
             "session" => Ok(None),
@@ -90,6 +101,7 @@ impl RoutedVault {
     }
     pub fn set_by_mode(&self, id: &str, mode: &str, secret: &SecretInput) -> Result<()> {
         match mode {
+            "auto" => self.automatic.set(id, secret),
             "local" => self.local.set(id, secret),
             "system" => self.system.set(id, secret),
             "session" => Err(AppError::new(
@@ -104,6 +116,7 @@ impl RoutedVault {
     }
     pub fn delete_by_mode(&self, id: &str, mode: &str) -> Result<()> {
         match mode {
+            "auto" => self.automatic.delete(id),
             "local" => self.local.delete(id),
             "system" => self.system.delete(id),
             "session" => Ok(()),
