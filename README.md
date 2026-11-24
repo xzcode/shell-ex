@@ -4,9 +4,9 @@
 
 **Tauri 2 · Rust / Tokio · React / TypeScript · xterm.js · Monaco**
 
-当前版本：`0.3.0`（本地加密密码库、连接编辑页简化，以及 v0.2 工作台增强）。macOS Apple Silicon 为首发平台，同时提供 Windows x64 和 Linux x64 构建。产品功能按 M0–M5 实现；各平台的实际验证结果与发布条件见 [交付状态](docs/milestones/STATUS.md)，不能用代码存在代替验收结果。
+当前代码版本：`0.3.1`（默认无主密码的本机自动加密密码保存，以及此前的工作台与连接编辑增强）。macOS Apple Silicon 为首发平台，同时提供 Windows x64 和 Linux x64 构建。产品功能按 M0–M5 实现；各平台的实际验证结果与发布条件见 [交付状态](docs/milestones/STATUS.md)，不能用代码存在代替验收结果。
 
-**[下载 v0.3.0 已验证构建草稿](https://github.com/xzcode/shell-ex/releases/tag/untagged-caa6163daf2a2574e4f6)** · [版本说明](docs/releases/v0.3.0.md) · [界面截图](docs/design/UI.md#v020-实际界面预览) · [安装与更新说明](docs/RELEASE.md)
+**v0.3.1 源码已提交，安装包待验证发布** · [v0.3.1 变更说明](docs/releases/v0.3.1.md) · [v0.3.0 旧版构建](https://github.com/xzcode/shell-ex/releases/tag/untagged-caa6163daf2a2574e4f6)（仍需主密码） · [界面截图](docs/design/UI.md#v020-实际界面预览) · [安装与更新说明](docs/RELEASE.md)
 
 v0.3.0 构建来源为 `a247fc10f27466c781d8f9ed335e0063ecc62051`，三平台安装包和 SHA-256 校验值已经全部保存。**目前仍是 Draft**：正式发布作业在 GitHub Runner 分配之前连续失败，尚未创建 v0.3.0 Git 标签。请通过上面的构建草稿下载；[v0.1.0 正式旧版](https://github.com/xzcode/shell-ex/releases/tag/v0.1.0) 保留可回退。下载私有仓库附件需相应 GitHub 权限。
 
@@ -98,6 +98,7 @@ npm run build
 - [架构与技术决策](docs/architecture/ARCHITECTURE.md)
 - [安全与数据约定](docs/SECURITY.md)
 - [发行与升级](docs/RELEASE.md)
+- [v0.3.1 变更说明](docs/releases/v0.3.1.md)
 - [v0.3.0 版本说明](docs/releases/v0.3.0.md)
 - [v0.2.0 版本说明](docs/releases/v0.2.0.md)
 - [v0.1.0 版本说明](docs/releases/v0.1.0.md)
