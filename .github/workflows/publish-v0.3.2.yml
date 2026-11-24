@@ -1,0 +1,26 @@
+name: Publish Shell EX v0.3.2
+on:
+  workflow_run:
+    workflows: ["Desktop packages"]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: release-v0.3.2
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master' && github.event.workflow_run.head_sha == 'e971c93e8e468971c41a403ee3729d6052442c17') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: e971c93e8e468971c41a403ee3729d6052442c17
+          persist-credentials: false
+      - name: Confirm installers and publish immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/publish_verified_v032.py
