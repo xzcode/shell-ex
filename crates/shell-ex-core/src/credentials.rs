@@ -1,6 +1,6 @@
 use crate::{
-    error::{AppError, Result},
     auto_vault::AutoVault,
+    error::{AppError, Result},
     local_vault::LocalVault,
     models::{Host, SecretInput},
     storage::Storage,
@@ -66,11 +66,7 @@ pub struct RoutedVault {
     system: SystemVault,
 }
 impl RoutedVault {
-    pub fn new(
-        store: Arc<Storage>,
-        local: Arc<LocalVault>,
-        automatic: Arc<AutoVault>,
-    ) -> Self {
+    pub fn new(store: Arc<Storage>, local: Arc<LocalVault>, automatic: Arc<AutoVault>) -> Self {
         Self {
             store,
             local,
