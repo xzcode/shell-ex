@@ -16,7 +16,7 @@ use aes_gcm::{
 use rand::{rngs::OsRng, RngCore};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::{Read, Write},
     path::Path,
     sync::{Mutex, MutexGuard},
