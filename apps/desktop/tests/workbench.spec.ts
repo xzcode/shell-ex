@@ -35,7 +35,7 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
   });
   await expect(hostDialog.getByRole("button", { name: "身份认证", exact: true })).toHaveCount(0);
   await expect(hostDialog.getByLabel("密码保存位置")).toHaveValue("auto");
-  await expect(hostDialog.getByText(/无需主密码/)).toBeVisible();
+  await expect(hostDialog.locator(".credential-mode-hint").filter({ hasText: "无需设置或输入主密码" })).toBeVisible();
   await hostDialog.getByLabel(/登录密码/).fill("PREVIEW-SECRET-DO-NOT-PERSIST");
   await hostDialog.getByRole("button", { name: "网络", exact: true }).click();
   const selectHeight = await hostDialog.getByLabel("代理类型").evaluate((element) => element.getBoundingClientRect().height);
