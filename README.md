@@ -4,9 +4,9 @@
 
 **Tauri 2 · Rust / Tokio · React / TypeScript · xterm.js · Monaco**
 
-当前版本：`0.2.0`（工作台布局、文件管理与监控增强）。macOS Apple Silicon 为首发平台，同时提供 Windows x64 和 Linux x64 构建。产品功能按 M0–M5 实现；各平台的实际验证结果与发布条件见 [交付状态](docs/milestones/STATUS.md)，不能用代码存在代替验收结果。
+当前版本：`0.3.0`（本地加密密码库、连接编辑页简化，以及 v0.2 工作台增强）。macOS Apple Silicon 为首发平台，同时提供 Windows x64 和 Linux x64 构建。产品功能按 M0–M5 实现；各平台的实际验证结果与发布条件见 [交付状态](docs/milestones/STATUS.md)，不能用代码存在代替验收结果。
 
-**[下载 v0.2.0](https://github.com/xzcode/shell-ex/releases/tag/v0.2.0)** · [版本说明](docs/releases/v0.2.0.md) · [界面截图](docs/design/UI.md#v020-实际界面预览) · [安装与更新说明](docs/RELEASE.md)
+**[下载 v0.3.0](https://github.com/xzcode/shell-ex/releases/tag/v0.3.0)** · [版本说明](docs/releases/v0.3.0.md) · [界面截图](docs/design/UI.md#v020-实际界面预览) · [安装与更新说明](docs/RELEASE.md)
 
 v0.2.0 业务代码来源为 `f7c4d61f0bbea30b2251f051484a1852f0388be4`，三平台安装包须与这一提交对应，并提供 SHA-256 校验文件和构建记录。私有仓库附件需要相应 GitHub 权限；[v0.1.0 旧版](https://github.com/xzcode/shell-ex/releases/tag/v0.1.0) 仍予保留。
 
@@ -26,7 +26,7 @@ v0.2.0 业务代码来源为 `f7c4d61f0bbea30b2251f051484a1852f0388be4`，三平
 | 监控 | Linux CPU/趋势、内存、Swap、负载、内核、CPU 核数、挂载点、网卡流量曲线与进程列表；明确触发的信号操作 |
 | 网络 | SOCKS5 / HTTP CONNECT、跳板、SSH 本地/远程/动态转发 |
 | 运维 | 快捷命令、Docker 容器与镜像列表、日志、启动/停止/重启 |
-| 数据 | SQLite 配置、系统凭据库、Argon2id + AES-256-GCM 备份、工作区布局恢复 |
+| 数据 | SQLite 主机配置、应用内 Argon2id + AES-256-GCM 加密密码库、可选系统凭据库、加密备份、工作区布局恢复 |
 
 不需要登录产品账号，不依赖自建服务端。程序不包含遥测或自动上传配置。
 
@@ -47,7 +47,7 @@ npm run tauri dev
 
 1. 新建连接，填写主机、端口、用户名，选择密码、私钥、SSH Agent 或交互式认证。
 2. 双击连接，核对服务器提供的 SHA-256 公钥指纹后确认信任。指纹变化不会自动接受。
-3. 输入当次凭据，或在连接配置中选择保存到系统凭据库。不能访问凭据库时可使用当次输入。
+3. 新建连接默认选择 Shell EX 本地加密密码库，首次保存时需设置至少 12 字符主密码，之后解锁即可自动连接。旧连接保持原系统凭据库模式；也可选择“仅本次使用”。
 4. 终端打开后，底部可切换文件、传输、快捷命令、隧道和 Docker；右侧显示 Linux 状态。
 
 私钥路径只保存引用。Agent 使用当前用户的系统 Agent，macOS/Linux 通过 `SSH_AUTH_SOCK`，Windows 通过 OpenSSH Agent 命名管道。配置跳板机时，先连接跳板，再连接目标。
@@ -98,6 +98,7 @@ npm run build
 - [架构与技术决策](docs/architecture/ARCHITECTURE.md)
 - [安全与数据约定](docs/SECURITY.md)
 - [发行与升级](docs/RELEASE.md)
+- [v0.3.0 版本说明](docs/releases/v0.3.0.md)
 - [v0.2.0 版本说明](docs/releases/v0.2.0.md)
 - [v0.1.0 版本说明](docs/releases/v0.1.0.md)
 - [开发交接](docs/HANDOFF.md)
