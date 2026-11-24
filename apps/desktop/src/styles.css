@@ -2780,3 +2780,9 @@ select:not([multiple]) {
 }
 
 .monitor-cpu-chart { display:block; width:100%; height:42px; margin-top:4px; }
+
+.auth-settings { margin-top:22px; padding-top:18px; border-top:1px solid var(--border-soft); }
+.auth-settings h4 { display:flex; gap:7px; align-items:center; font-size:12px; font-weight:600; margin:0 0 15px; }
+.auth-settings h4 svg { color:var(--accent); }
+.credential-mode { display:flex; flex-direction:column; gap:8px; }
+.credential-mode-hint { color:var(--muted); font-size:10px; line-height:1.65; margin:0; }

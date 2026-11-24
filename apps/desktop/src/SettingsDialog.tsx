@@ -21,6 +21,7 @@ import {
   savePath,
 } from "./api";
 import { Busy, ErrorBox, Field, Modal, Toggle } from "./ui";
+import { VaultDialog, type VaultStatus } from "./VaultDialog";
 export function SettingsDialog({
   settings,
   onSave,
@@ -42,6 +43,8 @@ export function SettingsDialog({
   const [error, setError] = useState("");
   const [backup, setBackup] = useState<"export" | "import" | null>(null);
   const [passphrase, setPassphrase] = useState("");
+  const [vaultStatus, setVaultStatus] = useState<VaultStatus | null>(null);
+  const [vaultDialog, setVaultDialog] = useState<"access" | "change" | null>(null);
   const [includeCredentials, setIncludeCredentials] = useState(false);
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
@@ -55,6 +58,12 @@ export function SettingsDialog({
     reason: string;
   } | null>(null);
   useEffect(() => {
+    if (native) void api<VaultStatus>("vault_status").then(setVaultStatus).catch(() => {});
+  }, []);
+  async function reloadVault() {
+    if (native) setVaultStatus(await api<VaultStatus>("vault_status"));
+  }
+  useEffect(() => {
     if (native)
       void api<{ configured: boolean; version: string; reason: string }>(
         "update_config",
@@ -63,7 +72,7 @@ export function SettingsDialog({
         .catch((e) =>
           setUpdate({
             configured: false,
-            version: "0.1.0",
+            version: "0.3.0",
             reason: errorText(e),
           }),
         );
@@ -143,6 +152,7 @@ export function SettingsDialog({
     }
   }
   return (
+    <>
     <Modal
       title="设置"
       subtitle="让工作台适合你的使用习惯。"
@@ -151,7 +161,7 @@ export function SettingsDialog({
       footer={
         <>
           <span className="footer-note">
-            Shell EX · {update?.version || "0.2.0"}
+            Shell EX · {update?.version || "0.3.0"}
           </span>
           <button className="button secondary" onClick={onClose}>
             取消
@@ -315,10 +325,42 @@ export function SettingsDialog({
               <h3>安全与凭据</h3>
               <div className="info-note">
                 <ShieldCheck size={20} />
-                <p>
-                  密码与私钥口令由系统凭据库管理。主机列表和普通配置中不存储明文密码。远程终端无权静默修改本地剪贴板。
-                </p>
+                <p>默认将 SSH 密码和私钥口令加密存放在 Shell EX 本地目录；已有旧连接继续使用系统凭据库。主机配置中不包含明文密码。</p>
               </div>
+              <h4>应用内加密密码库</h4>
+              <div className="settings-list">
+                <div>
+                  <strong>密码库状态</strong>
+                  <span>{vaultStatus
+                    ? !vaultStatus.initialized ? "未创建"
+                      : vaultStatus.unlocked ? "已解锁" : "已锁定"
+                    : native ? "读取中" : "仅桌面应用可用"}</span>
+                </div>
+                <div>
+                  <strong>加密记录</strong>
+                  <span>{vaultStatus ? vaultStatus.count + " 项" : "—"}</span>
+                </div>
+              </div>
+              <div className="vault-settings-actions">
+                <button className="button secondary" disabled={!native}
+                  onClick={() => setVaultDialog("access")}>
+                  <KeyRound size={14} />
+                  {vaultStatus?.initialized ? "解锁密码库" : "设置主密码"}
+                </button>
+                <button className="button secondary"
+                  disabled={!native || !vaultStatus?.unlocked}
+                  onClick={async () => {
+                    try {
+                      await api("vault_lock");
+                      await reloadVault();
+                      notify("应用内密码库已锁定。", "success");
+                    } catch (e) { notify(errorText(e), "error"); }
+                  }}>锁定</button>
+                <button className="button secondary"
+                  disabled={!native || !vaultStatus?.initialized}
+                  onClick={() => setVaultDialog("change")}>修改主密码</button>
+              </div>
+              <p className="section-description">使用 Argon2id + AES-256-GCM，加密文件保存在应用数据目录。关闭应用后清除解锁密钥；忘记主密码无法恢复已加密的 SSH 密码。</p>
               <div className="settings-list">
                 <div>
                   <strong>主机指纹校验</strong>
@@ -603,5 +645,16 @@ export function SettingsDialog({
         </Modal>
       )}
     </Modal>
+    {vaultDialog && (
+      <VaultDialog changePassword={vaultDialog === "change"}
+        onClose={() => setVaultDialog(null)}
+        onReady={() => {
+          setVaultDialog(null);
+          void reloadVault().catch((e) => notify(errorText(e), "error"));
+          notify("应用内密码库操作成功。", "success");
+        }}
+      />
+    )}
+    </>
   );
 }

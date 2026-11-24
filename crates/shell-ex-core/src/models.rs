@@ -11,6 +11,9 @@ pub struct Host {
     pub username: String,
     pub group: String,
     pub auth_method: String,
+    /// Missing in v0.1/v0.2 records: preserve their system Keychain credentials.
+    #[serde(default = "default_credential_store")]
+    pub credential_store: String,
     pub private_key_path: Option<String>,
     pub proxy: Option<ProxyConfig>,
     pub jump_host_id: Option<String>,
@@ -20,6 +23,9 @@ pub struct Host {
     pub favorite: bool,
     pub color: String,
     pub notes: String,
+}
+pub fn default_credential_store() -> String {
+    "system".into()
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -139,5 +145,28 @@ impl Default for Workspace {
             files_visible: true,
             split: "none".into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod credential_store_compat_tests {
+    use super::*;
+    #[test]
+    fn legacy_saved_hosts_remain_on_system_credentials_without_plaintext() {
+        let raw = serde_json::json!({
+            "id": uuid::Uuid::new_v4().to_string(),
+            "name": "Legacy", "address": "example.org", "port": 22,
+            "username": "ubuntu", "group": "Old",
+            "authMethod": "password", "privateKeyPath": null,
+            "proxy": null, "jumpHostId": null, "startupDirectory": null,
+            "keepAliveSeconds": 30, "connectTimeoutSeconds": 15,
+            "favorite": false, "color": "#aaa", "notes": "existing connection"
+        });
+        let old: Host = serde_json::from_value(raw).unwrap();
+        assert_eq!(old.credential_store, "system");
+        let serialized = serde_json::to_string(&old).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(json["credentialStore"], "system");
+        assert!(!serialized.contains("password123"));
     }
 }

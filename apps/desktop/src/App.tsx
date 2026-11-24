@@ -67,6 +67,7 @@ import {
 } from "./OperationsPanels";
 import { MonitorPanel } from "./MonitorPanel";
 import { SettingsDialog } from "./SettingsDialog";
+import { VaultDialog, type VaultStatus } from "./VaultDialog";
 import { hasDirtyDrafts } from "./drafts";
 type Toast = {
   id: number;
@@ -120,6 +121,7 @@ export default function App() {
     resolve: (yes: boolean) => void;
   } | null>(null);
   const [secretPrompt, setSecretPrompt] = useState<SecretPrompt | null>(null);
+  const [vaultPrompt, setVaultPrompt] = useState<{ resolve: (ok: boolean) => void } | null>(null);
   const [authRequests, setAuthRequests] = useState<AuthRequest[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [bootError, setBootError] = useState("");
@@ -310,8 +312,23 @@ export default function App() {
         try {
           saved = await api<boolean>("host_secret_status", { id: host.id });
         } catch (e) {
-          if (automatic) throw e;
-          notify("系统凭据库暂不可用，将使用本次连接的临时凭据。", "info");
+          const mode = host.credentialStore || "system";
+          if (mode === "local") {
+            const status = await api<VaultStatus>("vault_status");
+            if (status.initialized && !status.unlocked) {
+              if (automatic) throw new Error("本地密码库已锁定，请手动解锁后连接。");
+              const unlocked = await new Promise<boolean>((resolve) =>
+                setVaultPrompt({ resolve }),
+              );
+              if (!unlocked) return false;
+              saved = await api<boolean>("host_secret_status", { id: host.id });
+            } else {
+              throw e;
+            }
+          } else {
+            if (automatic) throw e;
+            notify("当前凭据库不可用，请为本次连接输入临时密码。", "info");
+          }
         }
         if (cancelled()) return false;
         if (!saved) {
@@ -832,7 +849,7 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark">›_</span>
           <strong>Shell EX</strong>
-          <span className="version-tag">0.2</span>
+          <span className="version-tag">0.3</span>
         </div>
         <div className="header-actions">
           <IconButton
@@ -1414,6 +1431,12 @@ export default function App() {
           }}
         />
       )}
+      {vaultPrompt && (
+        <VaultDialog
+          onClose={() => { vaultPrompt.resolve(false); setVaultPrompt(null); }}
+          onReady={() => { vaultPrompt.resolve(true); setVaultPrompt(null); }}
+        />
+      )}
       {secretPrompt && (
         <CredentialPrompt
           prompt={secretPrompt}
@@ -1622,7 +1645,7 @@ function CredentialPrompt({
             ? "私钥口令（未加密私钥可留空）"
             : "密码"
         }
-        hint="仅本次连接使用，不会保存。可在连接配置中选择保存到系统凭据库。"
+        hint="只用于本次连接，不会保存。需要自动登录可在基本信息中选择应用内加密密码库。"
       >
         <input
           autoFocus

@@ -4,6 +4,7 @@ pub mod docker;
 pub mod error;
 pub mod files;
 pub mod import;
+pub mod local_vault;
 pub mod models;
 pub mod monitor;
 pub mod pty;
