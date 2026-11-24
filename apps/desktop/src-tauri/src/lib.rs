@@ -3,6 +3,7 @@ use serde::Serialize;
 use shell_ex_core::{
     auto_vault::AutoVault,
     backup,
+    builtin_vault::BuiltinVault,
     credentials::{CredentialVault, RoutedVault},
     docker::{ContainerInfo, DockerImage, DockerService},
     error::{AppError, Result},
@@ -45,8 +46,21 @@ impl AppState {
     fn new(path: PathBuf) -> Result<Self> {
         let store = Arc::new(Storage::open(&path.join("shell-ex.sqlite3"))?);
         let local_vault = Arc::new(LocalVault::open(&path.join("credentials.sqlite3"))?);
-        let auto_vault = Arc::new(AutoVault::open(&path)?);
-        let vault = Arc::new(RoutedVault::new(store.clone(), local_vault, auto_vault));
+        // Existing v0.3.1 auto-vault users keep their original encrypted records.
+        // Do not create a legacy key file on a fresh v0.3.2 installation.
+        let legacy_auto =
+            if path.join("auto-vault.sqlite3").exists() || path.join("auto-vault.key").exists() {
+                Some(Arc::new(AutoVault::open(&path)?))
+            } else {
+                None
+            };
+        let builtin = Arc::new(BuiltinVault::open(&path)?);
+        let vault = Arc::new(RoutedVault::new(
+            store.clone(),
+            local_vault,
+            legacy_auto,
+            builtin,
+        ));
         let ssh = Arc::new(SshManager::new());
         Ok(Self {
             transfers: Arc::new(TransferManager::new(
@@ -372,7 +386,7 @@ async fn host_save(
                     // credentials. Keep the old Keychain record untouched; the UI
                     // warns that its old copy might need manual cleanup.
                     if previous_host.credential_store == "system"
-                        && ["local", "auto"].contains(&host.credential_store.as_str())
+                        && ["local", "auto", "builtin"].contains(&host.credential_store.as_str())
                         && has_secret
                     {
                         return Ok(saved);

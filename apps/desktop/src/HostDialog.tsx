@@ -52,7 +52,7 @@ export function HostDialog({
       );
       return;
     }
-    const mode = form.credentialStore || (host ? "system" : "auto");
+    const mode = form.credentialStore || (host ? "system" : "builtin");
     const persistentAuth = form.authMethod === "password" || form.authMethod === "key";
     const suppliedCredential = form.authMethod === "password" ? password : form.authMethod === "key" ? passphrase : "";
     const requiresVault = mode === "local" && native && persistentAuth &&
@@ -90,7 +90,7 @@ export function HostDialog({
         setProbe(result);
         notify("SSH 握手完成，连接配置已保存；尚未进行身份认证。", "success");
       } else {
-        if (host && (host.credentialStore || "system") === "system" && ["auto", "local"].includes(mode)) {
+        if (host && (host.credentialStore || "system") === "system" && ["builtin", "auto", "local"].includes(mode)) {
           notify("已切换到应用内加密库。如旧系统凭据库无法访问，原副本可能仍保留，请在系统 Keychain 中检查。", "info");
         }
         onSaved(saved);
@@ -105,7 +105,7 @@ export function HostDialog({
     <>
     <Modal
       title={host ? "编辑连接" : "新建 SSH 连接"}
-      subtitle="认证与连接信息在同一页；默认在本机自动加密保存 SSH 密码。"
+      subtitle="连接信息与身份认证在同一页，默认内置加密保存服务器密码。"
       onClose={() => {
         setPassword("");
         setPassphrase("");
@@ -249,7 +249,7 @@ export function HostDialog({
               <option value="interactive">交互式认证 / MFA</option>
             </select>
           </Field>
-          {form.authMethod === "password" && (form.credentialStore || (host ? "system" : "auto")) !== "session" && (
+          {form.authMethod === "password" && (form.credentialStore || (host ? "system" : "builtin")) !== "session" && (
             <Field
               label="登录密码"
               full
@@ -296,7 +296,7 @@ export function HostDialog({
                   </button>
                 </div>
               </Field>
-              {(form.credentialStore || (host ? "system" : "auto")) !== "session" && <Field label="私钥口令（如果有）" full>
+              {(form.credentialStore || (host ? "system" : "builtin")) !== "session" && <Field label="私钥口令（如果有）" full>
                 <input
                   type="password"
                   autoComplete="new-password"
@@ -326,11 +326,14 @@ export function HostDialog({
           {(form.authMethod === "password" || form.authMethod === "key") && (
             <div className="full credential-mode">
               <Field label="密码保存位置" full>
-                <select value={form.credentialStore || (host ? "system" : "auto")}
-                  onChange={(e) => set("credentialStore", e.target.value as "auto" | "local" | "system" | "session")}>
-                  <option value="auto">本地自动加密保存（默认，无需主密码）</option>
+                <select value={form.credentialStore || (host ? "system" : "builtin")}
+                  onChange={(e) => set("credentialStore", e.target.value as "builtin" | "auto" | "local" | "system" | "session")}>
+                  <option value="builtin">本地加密保存（默认）</option>
                   <option value="system">系统凭据库（Keychain 等）</option>
-                  <option value="session">仅本次使用，不保存密码</option>
+                  <option value="session">不保存密码（每次输入）</option>
+                  {(host?.credentialStore === "auto" || form.credentialStore === "auto") && (
+                    <option value="auto">旧版自动加密库（兼容）</option>
+                  )}
                   {(host?.credentialStore === "local" || form.credentialStore === "local") && (
                     <option value="local">旧版主密码加密库（兼容）</option>
                   )}
@@ -338,12 +341,14 @@ export function HostDialog({
               </Field>
               <p className="credential-mode-hint">
                 {form.credentialStore === "session"
-                  ? "只保存服务器配置，连接时再输入密码。"
+                  ? "只保存服务器配置，下次连接时再输入 SSH 密码。"
                   : form.credentialStore === "system" || (!form.credentialStore && host)
-                    ? "通过系统凭据库保存。旧版连接继续沿用原设置，不自动迁移。"
-                    : form.credentialStore === "local"
-                      ? "旧版加密库仍需要原主密码；可以输入 SSH 密码后切换到自动加密。"
-                      : "自动加密并保存到 Shell EX 应用目录，之后直接连接，无需设置或输入主密码。密钥也保存在本机，请保护设备和应用数据。"}
+                    ? "使用原系统凭据库，已有连接不会自动迁移。"
+                    : form.credentialStore === "auto"
+                      ? "保留旧版自动加密的凭据，原来的本机密钥文件仍用于解密旧记录。"
+                      : form.credentialStore === "local"
+                        ? "兼容以前设置过主密码的加密库，可以重新输入服务器密码切换到默认模式。"
+                        : "使用内置 AES-256-GCM 统一加密方式，保存后直接连接；不需要主密码或单独的密钥文件。"}
               </p>
               {!native && <p className="credential-mode-hint">当前是浏览器预览，不会保存任何密码。</p>}
             </div>
