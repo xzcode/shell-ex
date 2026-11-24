@@ -1102,8 +1102,7 @@ export default function App() {
               <div
                 className={`terminal-area ${splitEnabled ? "split-" + workspace.split : ""}`}
               >
-                {sessions.length ? (
-                  sessions.map((s) => (
+                {sessions.map((s) => (
                     <div
                       key={s.id}
                       className={`terminal-slot${s.id === activeId ? " primary" : splitEnabled && s.id === secondary?.id ? " secondary" : " hidden"}`}
@@ -1142,69 +1141,7 @@ export default function App() {
                         </div>
                       )}
                     </div>
-                  ))
-                ) : (
-                  <div className="welcome-screen">
-                    <div className="welcome-heading">
-                      <div className="welcome-symbol">
-                        <TerminalSquare size={30} strokeWidth={1.3} />
-                      </div>
-                      <span className="eyebrow">SHELL EX WORKSPACE</span>
-                      <h1>{tr("从一台服务器开始。")}</h1>
-                      <p>{tr("终端、文件与系统状态，在同一个工作空间。")}</p>
-                    </div>
-                    <div className="welcome-actions">
-                      <button
-                        className="button primary"
-                        onClick={() => setHostDialog(null)}
-                      >
-                        <Plus size={16} />{tr("新建 SSH 连接")}</button>
-                      <button
-                        className="button secondary"
-                        onClick={() => void openLocal()}
-                      >
-                        <TerminalSquare size={16} />{tr("打开本地终端")}</button>
-                    </div>
-                    {remembered.length > 0 && (
-                      <div className="restore-workspace">
-                        <span>{tr("上次工作区 ·")}{" "}{remembered.length}{" "}{tr("台主机")}</span>
-                        <button
-                          className="text-button"
-                          onClick={async () => {
-                            for (const h of remembered) await connectHost(h);
-                            restoreRef.current = [];
-                          }}
-                        >{tr("重新连接")}<ArrowUpRight size={13} />
-                        </button>
-                      </div>
-                    )}
-                    <div className="welcome-details">
-                      <div>
-                        <ShieldCheck size={17} />
-                        <strong>{tr("安全连接")}</strong>
-                        <span>{tr("验证主机身份，保护凭据")}</span>
-                      </div>
-                      <div>
-                        <Folder size={17} />
-                        <strong>{tr("文件随手可及")}</strong>
-                        <span>{tr("SFTP 传输与远程编辑")}</span>
-                      </div>
-                      <div>
-                        <Network size={17} />
-                        <strong>{tr("适应你的网络")}</strong>
-                        <span>{tr("代理、跳板机与端口转发")}</span>
-                      </div>
-                    </div>
-                    <div className="welcome-shortcuts">
-                      <span>{tr("快速查找")}<kbd>⌘ K</kbd>
-                      </span>
-                      <span>{tr("新建连接")}<kbd>⌘ ⇧ N</kbd>
-                      </span>
-                      <span>{tr("设置")}<kbd>⌘ ,</kbd>
-                      </span>
-                    </div>
-                  </div>
-                )}
+                  ))}
                 {connecting.size > 0 && (
                   <div className="connecting-overlay">
                     <LoaderCircle size={15} className="spin" />{tr("正在连接")}{" "}{connecting.size}{" "}{tr("台主机…")}</div>
@@ -1443,6 +1380,23 @@ export default function App() {
             <kbd>ESC</kbd>
           </div>
           <div className="palette-results">
+            {!sessions.length && remembered.length > 0 && !paletteQuery.trim() && (
+              <button
+                disabled={connecting.size > 0}
+                onClick={async () => {
+                  setPalette(false);
+                  for (const h of remembered) await connectHost(h);
+                  restoreRef.current = [];
+                }}
+              >
+                <RefreshCw size={17} />
+                <span>
+                  <strong>{tr("恢复上次工作区")}</strong>
+                  <small>{remembered.length} {tr("台主机")}</small>
+                </span>
+                <ArrowUpRight size={15} />
+              </button>
+            )}
             {hosts
               .filter((h) =>
                 `${h.name} ${h.address} ${h.username}`

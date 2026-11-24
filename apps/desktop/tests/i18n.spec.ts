@@ -6,8 +6,9 @@ test.describe("language preferences", () => {
   test("system locale, manual selection, reload, and saved host data", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
-    await expect(page.getByText("Start with a server.")).toBeVisible();
-    await page.getByRole("button", { name: "New SSH connection", exact: true }).click();
+    await expect(page.locator(".terminal-area")).toBeEmpty();
+    await page.getByRole("button", { name: "New session", exact: true }).click();
+    await page.locator(".palette-results").getByRole("button", { name: /New SSH connection/ }).click();
     const connection = page.getByRole("dialog", { name: "New SSH connection" });
     await connection.getByLabel("Connection name", { exact: true }).fill("测试服务器");
     await connection.getByLabel("Host address", { exact: true }).fill("192.0.2.45");

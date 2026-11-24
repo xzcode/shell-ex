@@ -904,119 +904,11 @@ svg {
   border-radius: 4px;
   z-index: 4;
 }
-.welcome-screen {
-  width: 100%;
-  min-height: 100%;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 28px 25px;
-  color: var(--secondary);
-}
-.welcome-heading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-}
-.welcome-symbol {
-  width: 50px;
-  height: 50px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border);
-  color: var(--accent);
-  background: var(--panel);
-  border-radius: 8px;
-  margin-bottom: 17px;
-}
 .eyebrow {
   font-size: 9px;
   color: var(--muted);
   letter-spacing: 2px;
   margin-bottom: 10px;
-}
-.welcome-heading h1 {
-  font-size: 25px;
-  line-height: 1.4;
-  font-weight: 550;
-  color: var(--text);
-  letter-spacing: -0.5px;
-  margin-bottom: 9px;
-}
-.welcome-heading p {
-  font-size: 11px;
-  color: var(--muted);
-}
-.welcome-actions {
-  display: flex;
-  gap: 9px;
-  margin-top: 23px;
-  margin-bottom: 29px;
-}
-.welcome-actions > .button {
-  font-size: 11px;
-  min-height: 33px;
-}
-.welcome-details {
-  display: flex;
-  justify-content: center;
-  gap: 24px;
-  width: 100%;
-  max-width: 540px;
-  border-top: 1px solid var(--border-soft);
-  padding-top: 23px;
-}
-.welcome-details > div {
-  display: grid;
-  grid-template-columns: 20px 1fr;
-  gap: 5px 7px;
-  flex: 1;
-  min-width: 0;
-}
-.welcome-details svg {
-  grid-row: span 2;
-  color: var(--muted);
-}
-.welcome-details strong {
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--secondary);
-}
-.welcome-details span {
-  font-size: 9px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.welcome-shortcuts {
-  display: flex;
-  justify-content: center;
-  gap: 23px;
-  margin-top: 29px;
-  font-size: 9px;
-  color: var(--muted);
-}
-.welcome-shortcuts > span {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.welcome-shortcuts kbd {
-  font-size: 9px;
-  background: transparent;
-  padding: 1px 4px;
-}
-.restore-workspace {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 15px;
-  font-size: 10px;
-  color: var(--muted);
-  margin: -11px 0 20px;
 }
 .bottom-panel {
   display: flex;
@@ -2517,16 +2409,6 @@ tbody tr.selected {
   .monitor-body {
     padding: 0 12px;
   }
-  .welcome-details {
-    gap: 15px;
-  }
-  .welcome-details span {
-    white-space: normal;
-    line-height: 1.6;
-  }
-  .welcome-shortcuts {
-    gap: 15px;
-  }
   .command-trigger {
     width: 250px;
   }
@@ -2547,38 +2429,9 @@ tbody tr.selected {
   }
 }
 @media (max-height: 760px) {
-  .welcome-screen {
-    padding-top: 20px;
-    padding-bottom: 18px;
-  }
-  .welcome-symbol {
-    width: 40px;
-    height: 40px;
-    margin-bottom: 12px;
-  }
-  .welcome-symbol svg {
-    width: 25px;
-    height: 25px;
-  }
-  .welcome-heading h1 {
-    font-size: 22px;
-  }
   .eyebrow {
     font-size: 8px;
     margin-bottom: 6px;
-  }
-  .welcome-actions {
-    margin-top: 17px;
-    margin-bottom: 20px;
-  }
-  .welcome-details {
-    padding-top: 17px;
-  }
-  .welcome-shortcuts {
-    margin-top: 20px;
-  }
-  .welcome-heading p {
-    font-size: 10px;
   }
   .modal-header {
     padding-top: 17px;

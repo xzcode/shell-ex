@@ -7,7 +7,8 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
   await expect(page.getByText("界面预览", { exact: true })).toBeVisible();
-  await expect(page.getByText("从一台服务器开始。")).toBeVisible();
+  await expect(page.locator(".terminal-area")).toBeEmpty();
+  await expect(page.locator(".welcome-screen")).toHaveCount(0);
   await expect(page.getByText("0 个连接", { exact: true })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "graphite");
   await expect(page.locator(".header-center")).toHaveCount(0);
@@ -18,9 +19,8 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
   });
 
   // These fixture addresses are documentation-only TEST-NET addresses. No remote API is mocked.
-  await page
-    .getByRole("button", { name: "新建 SSH 连接", exact: true })
-    .click();
+  await page.getByRole("button", { name: "新建会话", exact: true }).click();
+  await page.locator(".palette-results").getByRole("button", { name: /新建 SSH 连接/ }).click();
   const hostDialog = page.getByRole("dialog", {
     name: "新建 SSH 连接",
     exact: true,
@@ -154,6 +154,7 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
   await page.screenshot({ path: info.outputPath("workbench-aurora.png"), fullPage: true });
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "aurora");
+  await expect(page.locator(".terminal-area")).toBeEmpty();
   // Copy preserves the favorite flag, so the restored host appears in both sections.
   const restoredHost = page
     .locator(".host-item")

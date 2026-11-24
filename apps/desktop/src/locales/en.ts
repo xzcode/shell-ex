@@ -72,6 +72,7 @@ export const en: Readonly<Record<string, string>> = {
   "终端、文件与系统状态，在同一个工作空间。": "Terminals, files, and system status in one workspace.",
   "新建 SSH 连接": "New SSH connection",
   "上次工作区 ·": "Last workspace ·",
+  "恢复上次工作区": "Restore last workspace",
   "台主机": "hosts",
   "安全连接": "Secure connections",
   "验证主机身份，保护凭据": "Verify host identities and protect credentials",
