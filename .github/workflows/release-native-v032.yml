@@ -1,0 +1,196 @@
+name: v0.3.2 native release recovery
+on:
+  push:
+    branches: [release/v0.3.2-native-direct]
+    paths: ['.github/workflows/release-native-v032.yml']
+permissions:
+  contents: read
+concurrency:
+  group: v032-native-release-recovery
+  cancel-in-progress: false
+jobs:
+  native:
+    if: github.repository == 'xzcode/shell-ex' && github.ref == 'refs/heads/release/v0.3.2-native-direct'
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+            platform: macOS-Apple-Silicon
+            pattern: dmg/*.dmg
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+            platform: Windows-x64
+            pattern: nsis/*.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      SOURCE_SHA: d89a4d717e36fdb4e592144e27f0757d9b2b92a8
+      NATIVE_TARGET: ${{ matrix.target }}
+      NATIVE_PLATFORM: ${{ matrix.platform }}
+      NATIVE_PATTERN: ${{ matrix.pattern }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d89a4d717e36fdb4e592144e27f0757d9b2b92a8
+          persist-credentials: false
+      - name: Check exact release source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(gh api repos/xzcode/shell-ex/git/ref/tags/v0.3.2 --jq .object.sha)" = "$SOURCE_SHA"
+          gh release view v0.3.2 --repo xzcode/shell-ex --json isDraft,isPrerelease
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+          cache-on-failure: true
+      - name: Install frontend dependencies
+        working-directory: apps/desktop
+        run: npm ci
+      - name: Build original tagged installer
+        working-directory: apps/desktop
+        run: npm run tauri -- build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Verify Apple Silicon binary and ad-hoc signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apps=(target/aarch64-apple-darwin/release/bundle/macos/*.app)
+          test "${#apps[@]}" = 1
+          test -d "${apps[0]}"
+          binary_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${apps[0]}/Contents/Info.plist")"
+          test "$(lipo -archs "${apps[0]}/Contents/MacOS/$binary_name")" = arm64
+          codesign --verify --deep --strict "${apps[0]}"
+      - name: Stage verified package
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, pathlib, shutil
+          root = pathlib.Path("target") / os.environ["NATIVE_TARGET"] / "release" / "bundle"
+          files = list(root.glob(os.environ["NATIVE_PATTERN"]))
+          assert len(files) == 1, files
+          src = files[0]
+          assert src.name.replace(" ", "-").startswith("Shell-EX_0.3.2_")
+          out = pathlib.Path("release-out")
+          out.mkdir(exist_ok=False)
+          installer = out / src.name.replace(" ", "-")
+          shutil.copyfile(src, installer)
+          digest = hashlib.sha256(installer.read_bytes()).hexdigest()
+          checksum = out / (installer.name + ".sha256")
+          checksum.write_text(digest + "  " + installer.name + "\n", encoding="utf-8")
+          manifest = {
+              "version": "0.3.2",
+              "sourceCommit": os.environ["SOURCE_SHA"],
+              "target": os.environ["NATIVE_TARGET"],
+              "platform": os.environ["NATIVE_PLATFORM"],
+              "installer": installer.name,
+              "sha256": digest,
+              "run_url": "https://github.com/" + os.environ["GITHUB_REPOSITORY"] + "/actions/runs/" + os.environ["GITHUB_RUN_ID"],
+              "signing": "ad-hoc, not notarized" if installer.suffix == ".dmg" else "unsigned",
+          }
+          (out / (installer.name + ".build.json")).write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          print(installer, installer.stat().st_size, digest)
+          PY
+      - name: Preserve package as Actions download independently of Release
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: Shell-EX-0.3.2-${{ matrix.platform }}
+          path: release-out/*
+          if-no-files-found: error
+          retention-days: 3
+      - name: Attach to existing v0.3.2 Release and verify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          repo = "xzcode/shell-ex"
+          tag = "v0.3.2"
+          def gh(*args):
+              return subprocess.check_output(["gh", *args], text=True)
+          def api(endpoint):
+              return json.loads(gh("api", "repos/" + repo + "/" + endpoint))
+          ref = api("git/ref/tags/" + tag)["object"]
+          assert ref["type"] == "commit" and ref["sha"] == os.environ["SOURCE_SHA"]
+          release = api("releases/tags/" + tag)
+          assert not release["draft"] and not release["prerelease"]
+          def digest(p):
+              return "sha256:" + hashlib.sha256(p.read_bytes()).hexdigest()
+          files = sorted(pathlib.Path("release-out").iterdir())
+          assert len(files) == 3
+          current = {a["name"]: a for a in release["assets"]}
+          missing = []
+          for p in files:
+              if p.name in current:
+                  assert current[p.name]["state"] == "uploaded"
+                  assert current[p.name]["size"] == p.stat().st_size
+                  assert current[p.name]["digest"] == digest(p)
+              else:
+                  missing.append(str(p))
+          if missing:
+              gh("release", "upload", tag, "--repo", repo, *missing)
+          current = {a["name"]: a for a in api("releases/tags/" + tag)["assets"]}
+          for p in files:
+              assert current[p.name]["state"] == "uploaded"
+              assert current[p.name]["size"] == p.stat().st_size
+              assert current[p.name]["digest"] == digest(p)
+              print("Published:", current[p.name]["browser_download_url"])
+          PY
+  finalize:
+    needs: native
+    if: always() && !cancelled() && github.repository == 'xzcode/shell-ex' && github.ref == 'refs/heads/release/v0.3.2-native-direct'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Reflect available installers in existing Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, subprocess
+          repo = "xzcode/shell-ex"
+          tag = "v0.3.2"
+          def gh(*args):
+              return subprocess.check_output(["gh", *args], text=True)
+          release = json.loads(gh("api", "repos/" + repo + "/releases/tags/" + tag))
+          ref = json.loads(gh("api", "repos/" + repo + "/git/ref/tags/" + tag))["object"]
+          assert ref["sha"] == "d89a4d717e36fdb4e592144e27f0757d9b2b92a8"
+          names = {a["name"] for a in release["assets"] if a["state"] == "uploaded"}
+          available = []
+          if any(n.startswith("Shell-EX_0.3.2_") and n.endswith(".deb") for n in names):
+              available.append("Linux x64")
+          for label, ext in [("macOS Apple Silicon", ".dmg"), ("Windows x64", ".exe")]:
+              if any(n.startswith("Shell-EX_0.3.2_") and n.endswith(ext) and n + ".sha256" in names and n + ".build.json" in names for n in names):
+                  available.append(label)
+          print("Verified available platforms:", available)
+          if len(available) > 1:
+              notes = (release.get("body") or "").split("\n\n**Verified platform availability:**")[0]
+              notes = notes.replace("macOS and Windows installers are not yet available for this version.", "").rstrip()
+              notes += "\n\n**Verified platform availability:** " + ", ".join(available) + "."
+              notes += "\nmacOS is ad-hoc signed, not notarized; Windows is unsigned."
+              args = ["release", "edit", tag, "--repo", repo, "--notes", notes]
+              if len(available) == 3:
+                  args += ["--latest"]
+              gh(*args)
+          PY
