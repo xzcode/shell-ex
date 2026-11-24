@@ -99,7 +99,11 @@ export function HostDialog({
     <Modal
       title={host ? "编辑连接" : "新建 SSH 连接"}
       subtitle="身份认证已合并至基本信息；SSH 密码可保存到 Shell EX 本地加密库。"
-      onClose={onClose}
+      onClose={() => {
+        setPassword("");
+        setPassphrase("");
+        onClose();
+      }}
       wide
       footer={
         <>

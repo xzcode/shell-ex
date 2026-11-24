@@ -45,7 +45,9 @@ impl LocalVault {
                 std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
             }
         }
-        if path.exists() && std::fs::symlink_metadata(path)?.file_type().is_symlink() {
+        if std::fs::symlink_metadata(path)
+            .is_ok_and(|meta| meta.file_type().is_symlink())
+        {
             return Err(AppError::new("VAULT_INVALID_PATH", "凭据库不能使用符号链接"));
         }
         let conn = Connection::open(path)?;
