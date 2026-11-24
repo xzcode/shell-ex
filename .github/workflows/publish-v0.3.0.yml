@@ -1,0 +1,137 @@
+name: Publish Shell EX v0.3.0
+on:
+  push:
+    branches: ['release/v0.3.0']
+    paths: ['.github/workflows/publish-v0.3.0.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: release-v0.3.0
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'xzcode/shell-ex' && github.ref == 'refs/heads/release/v0.3.0'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify source, installers and publish official release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          repo = os.environ["GITHUB_REPOSITORY"]
+          assert repo == "xzcode/shell-ex"
+          source = "a247fc10f27466c781d8f9ed335e0063ecc62051"
+          release_id = 456283740
+          tag = "v0.3.0"
+          expected = {
+            "Shell-EX-Linux-x64-r45322075361.1.build.json": {
+              "id": 785602582,
+              "size": 413,
+              "digest": "sha256:cb8a080f1847b6a316b0b7733418fdd93978867a3e1ca487aa41831802d92e8d"
+            },
+            "Shell-EX-Linux-x64-r45322075361.1.sha256": {
+              "id": 785602569,
+              "size": 106,
+              "digest": "sha256:385fd1c0dc8551db470c26078951f2d9949b153abda6e36e7430c94fb41dd41c"
+            },
+            "Shell-EX-macOS-Apple-Silicon-r45322075361.1.build.json": {
+              "id": 785591584,
+              "size": 431,
+              "digest": "sha256:ae860f36415111e0a728dce48db3d4f796886bc0924ccf5f236c0603a6b6bebb"
+            },
+            "Shell-EX-macOS-Apple-Silicon-r45322075361.1.sha256": {
+              "id": 785591586,
+              "size": 108,
+              "digest": "sha256:d559bc03ca8bdaf0ba090e2e9d809b17fabe03377ceae0e1322224dd8b9aff47"
+            },
+            "Shell-EX-UI-r45322075422.1.build.json": {
+              "id": 785590584,
+              "size": 381,
+              "digest": "sha256:bb58e8066dcc82f5af62030be712fd8086c873fc01551d371eb4923d85552697"
+            },
+            "Shell-EX-UI-r45322075422.1.sha256": {
+              "id": 785590577,
+              "size": 110,
+              "digest": "sha256:fcbb5b6fd22d86f6aee1a44875291d2e0dddb26f70b815e26ca2638595ad60fe"
+            },
+            "Shell-EX-UI-verification-r45322075422.1.zip": {
+              "id": 785590582,
+              "size": 732641,
+              "digest": "sha256:9845d2a49a9d7d4d824d6edbf0faddc501e7b6e480b3f6969b04ec4701c21e5f"
+            },
+            "Shell-EX-Windows-x64-r45322075361.1.build.json": {
+              "id": 785600013,
+              "size": 431,
+              "digest": "sha256:2ab80e2280a68090e03d05c14512bd6067280f34f1af84a9093a1bf15c2360ac"
+            },
+            "Shell-EX-Windows-x64-r45322075361.1.sha256": {
+              "id": 785600014,
+              "size": 111,
+              "digest": "sha256:cd14391245705f2cc1a1e981a34a2877124384689b3df374920c8291d3b90cdc"
+            },
+            "Shell-EX_0.3.0_aarch64-r45322075361.1.dmg": {
+              "id": 785591578,
+              "size": 8367206,
+              "digest": "sha256:62e85c07cf0baf8646ba378f460879231b66a59c77e07320dc4c871e04daacda"
+            },
+            "Shell-EX_0.3.0_amd64-r45322075361.1.deb": {
+              "id": 785602571,
+              "size": 9064916,
+              "digest": "sha256:3920d1c8f6f7d5b6d6708dabda547c7e4ed484d8be7a01bc3ba892185be05fc5"
+            },
+            "Shell-EX_0.3.0_x64-setup-r45322075361.1.exe": {
+              "id": 785600012,
+              "size": 7851376,
+              "digest": "sha256:3485ca33473b41ed83dbc55f6bb92f7c5506d7a19f8476f7b1becccee62a2221"
+            }
+          }
+          def api(method, endpoint, payload=None, missing_ok=False):
+              command = ["gh", "api", "--method", method, f"repos/{repo}/{endpoint}"]
+              if payload is not None: command += ["--input", "-"]
+              p = subprocess.run(command, input=json.dumps(payload) if payload is not None else None, text=True, capture_output=True)
+              if p.returncode:
+                  if missing_ok and "HTTP 404" in p.stderr: return None
+                  raise RuntimeError(f"{method} {endpoint}: {p.stderr.strip()}")
+              return json.loads(p.stdout)
+          def snapshot(release):
+              assert all(a["state"] == "uploaded" for a in release["assets"])
+              return {a["name"]: {k: a.get(k) for k in ("id", "size", "digest")} for a in release["assets"]}
+          for run_id in (45322075422, 45322075361):
+              run = api("GET", f"actions/runs/{run_id}")
+              assert run["head_sha"] == source and run["status"] == "completed" and run["conclusion"] == "success"
+          release = api("GET", f"releases/{release_id}")
+          assert release["target_commitish"] == source
+          assert snapshot(release) == expected and len(expected) == 12
+          notes = pathlib.Path("docs/releases/v0.3.0.md").read_text(encoding="utf-8")
+          assert "v0.3.0" in notes and "AES-256-GCM" in notes
+          if release["draft"]:
+              assert release["tag_name"] == "build-a247fc10f274"
+              existing = api("GET", f"releases/tags/{tag}", missing_ok=True)
+              assert existing is None or existing["id"] == release_id
+              ref = api("GET", f"git/ref/tags/{tag}", missing_ok=True)
+              if ref is None: ref = api("POST", "git/refs", {"ref": f"refs/tags/{tag}", "sha": source})
+              assert ref["object"]["sha"] == source and ref["object"]["type"] == "commit"
+              release = api("PATCH", f"releases/{release_id}", {
+                  "tag_name":tag, "target_commitish":source, "name":"Shell EX v0.3.0",
+                  "body":notes, "draft":False, "prerelease":False, "make_latest":"true"
+              })
+          else:
+              assert release["tag_name"] == tag and not release["prerelease"]
+          assert not release["draft"] and not release["prerelease"]
+          assert release["tag_name"] == tag and snapshot(release) == expected
+          latest = api("GET", "releases/latest")
+          assert latest["id"] == release_id and latest["tag_name"] == tag
+          ref = api("GET", f"git/ref/tags/{tag}")
+          assert ref["object"]["type"] == "commit" and ref["object"]["sha"] == source
+          print("Published and verified:", release["html_url"])
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write(f"# Shell EX v0.3.0 Published\n\n[Release]({release['html_url']})\n\n")
+              f.write(f"Source: `{source}`; validated 12 unchanged assets.\n")
+          PY
