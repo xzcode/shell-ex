@@ -11,6 +11,9 @@ pub struct Host {
     pub username: String,
     pub group: String,
     pub auth_method: String,
+    /// Missing in v0.1/v0.2 records: preserve their system Keychain credentials.
+    #[serde(default = "default_credential_store")]
+    pub credential_store: String,
     pub private_key_path: Option<String>,
     pub proxy: Option<ProxyConfig>,
     pub jump_host_id: Option<String>,
@@ -21,6 +24,7 @@ pub struct Host {
     pub color: String,
     pub notes: String,
 }
+pub fn default_credential_store() -> String { "system".into() }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProxyConfig {
