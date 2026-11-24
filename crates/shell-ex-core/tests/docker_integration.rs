@@ -44,6 +44,7 @@ async fn connect_fixture() -> (Arc<SshManager>, String) {
         username: std::env::var("SHELL_EX_TEST_USER").unwrap(),
         group: "tests".into(),
         auth_method: "key".into(),
+        credential_store: "local".into(),
         private_key_path: Some(std::env::var("SHELL_EX_TEST_KEY").unwrap()),
         proxy: None,
         jump_host_id: None,

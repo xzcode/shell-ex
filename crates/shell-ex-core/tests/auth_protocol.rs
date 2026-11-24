@@ -160,6 +160,7 @@ async fn password_interactive_fingerprint_and_terminal_protocol() {
         username: "fixture".into(),
         group: "tests".into(),
         auth_method: "password".into(),
+        credential_store: "local".into(),
         private_key_path: None,
         proxy: None,
         jump_host_id: None,
