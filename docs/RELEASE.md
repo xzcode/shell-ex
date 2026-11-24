@@ -1,3 +1,18 @@
+## 无 GitHub Actions 的 macOS 发行方式
+
+如果 GitHub Actions 托管 Runner 额度已用完，**不要继续重试同一工作流**。在已登录 GitHub 的 Apple Silicon Mac 上安装 Node.js、Rust、Xcode Command Line Tools、GitHub CLI（`brew install gh`），并执行：
+
+```bash
+git switch master
+git pull --ff-only
+gh auth login     # 首次使用 GitHub CLI 时
+bash scripts/release_local_macos.sh
+```
+
+此脚本核对 v0.3.2 的三个版本号，直接在 Mac 上通过 Tauri 生成 DMG、附带 SHA-256 和来源提交 JSON，然后通过 `gh release create` 发布正式 `v0.3.2`，**不调用 GitHub Actions**。如果缺少 GitHub CLI 或登录状态，仍会先产出本地 DMG，但不会谎称已发布。macOS 使用 ad-hoc 签名，尚未 notarize；这是个人构建的发行边界。
+
+此发行入口首先覆盖 Mac Apple Silicon。Windows/Linux 安装包需在相应系统上另行构建，不会把旧版本的 Windows/Linux 文件充作 v0.3.2。若需由 ChatGPT 代操作 Mac，需先将该 Mac 连接到可操作的远程桌面工具；当前账户连接的远程设备仅有 Linux 主机。
+
 ## v0.3.1 待打包状态（2026-11-24）
 
 [应用新代码](https://github.com/xzcode/shell-ex/commit/4669cc80e324092a15eed2ca904c8a050edd5fde) 已合并并通过独立测试，但 GitHub Actions 三平台包作业 [45337791471](https://github.com/xzcode/shell-ex/actions/runs/45337791471) 在取得 Runner 前失败，`runner_id=0` 且 `steps=[]`。macOS / Windows / Linux 新安装包**未生成**，正式 `v0.3.1` 标签和 Release 也未创建。禁止将 v0.3.0 的旧产物冒充新版本，待 Actions 资源问题排除后从 `master` 重建，见 [v0.3.1 版本说明](releases/v0.3.1.md)。
