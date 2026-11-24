@@ -2,8 +2,8 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
 use shell_ex_core::{
     auto_vault::AutoVault,
-    builtin_vault::BuiltinVault,
     backup,
+    builtin_vault::BuiltinVault,
     credentials::{CredentialVault, RoutedVault},
     docker::{ContainerInfo, DockerImage, DockerService},
     error::{AppError, Result},
@@ -48,13 +48,12 @@ impl AppState {
         let local_vault = Arc::new(LocalVault::open(&path.join("credentials.sqlite3"))?);
         // Existing v0.3.1 auto-vault users keep their original encrypted records.
         // Do not create a legacy key file on a fresh v0.3.2 installation.
-        let legacy_auto = if path.join("auto-vault.sqlite3").exists()
-            || path.join("auto-vault.key").exists()
-        {
-            Some(Arc::new(AutoVault::open(&path)?))
-        } else {
-            None
-        };
+        let legacy_auto =
+            if path.join("auto-vault.sqlite3").exists() || path.join("auto-vault.key").exists() {
+                Some(Arc::new(AutoVault::open(&path)?))
+            } else {
+                None
+            };
         let builtin = Arc::new(BuiltinVault::open(&path)?);
         let vault = Arc::new(RoutedVault::new(
             store.clone(),

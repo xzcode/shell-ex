@@ -94,7 +94,9 @@ impl RoutedVault {
     pub fn get_by_mode(&self, id: &str, mode: &str) -> Result<Option<SecretInput>> {
         match mode {
             "builtin" => self.builtin.get(id),
-            "auto" => self.automatic.as_ref()
+            "auto" => self
+                .automatic
+                .as_ref()
                 .ok_or_else(|| AppError::new("LEGACY_AUTO_VAULT_MISSING", "旧版自动密码库不存在"))?
                 .get(id),
             "local" => self.local.get(id),
@@ -109,7 +111,9 @@ impl RoutedVault {
     pub fn set_by_mode(&self, id: &str, mode: &str, secret: &SecretInput) -> Result<()> {
         match mode {
             "builtin" => self.builtin.set(id, secret),
-            "auto" => self.automatic.as_ref()
+            "auto" => self
+                .automatic
+                .as_ref()
                 .ok_or_else(|| AppError::new("LEGACY_AUTO_VAULT_MISSING", "旧版自动密码库不存在"))?
                 .set(id, secret),
             "local" => self.local.set(id, secret),
@@ -127,7 +131,9 @@ impl RoutedVault {
     pub fn delete_by_mode(&self, id: &str, mode: &str) -> Result<()> {
         match mode {
             "builtin" => self.builtin.delete(id),
-            "auto" => self.automatic.as_ref()
+            "auto" => self
+                .automatic
+                .as_ref()
                 .ok_or_else(|| AppError::new("LEGACY_AUTO_VAULT_MISSING", "旧版自动密码库不存在"))?
                 .delete(id),
             "local" => self.local.delete(id),

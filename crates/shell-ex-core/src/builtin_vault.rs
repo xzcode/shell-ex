@@ -89,11 +89,9 @@ impl BuiltinVault {
     }
 
     pub fn count(&self) -> Result<u64> {
-        let count: i64 = self.db()?.query_row(
-            "SELECT COUNT(*) FROM builtin_secrets",
-            [],
-            |row| row.get(0),
-        )?;
+        let count: i64 =
+            self.db()?
+                .query_row("SELECT COUNT(*) FROM builtin_secrets", [], |row| row.get(0))?;
         Ok(count.max(0) as u64)
     }
 }
@@ -101,7 +99,8 @@ impl BuiltinVault {
 impl CredentialVault for BuiltinVault {
     fn get(&self, id: &str) -> Result<Option<SecretInput>> {
         let aad = Self::associated_data(id)?;
-        let encrypted: Option<(Vec<u8>, Vec<u8>)> = self.db()?
+        let encrypted: Option<(Vec<u8>, Vec<u8>)> = self
+            .db()?
             .query_row(
                 "SELECT nonce,ciphertext FROM builtin_secrets WHERE id=?1",
                 [id],
@@ -123,10 +122,9 @@ impl CredentialVault for BuiltinVault {
                         aad: &aad,
                     },
                 )
-                .map_err(|_| AppError::new(
-                    "BUILTIN_VAULT_AUTH_FAILED",
-                    "保存的密码已损坏，无法解密",
-                ))?,
+                .map_err(|_| {
+                    AppError::new("BUILTIN_VAULT_AUTH_FAILED", "保存的密码已损坏，无法解密")
+                })?,
         );
         Ok(Some(serde_json::from_slice(&plain)?))
     }
@@ -139,7 +137,10 @@ impl CredentialVault for BuiltinVault {
         let ciphertext = Self::cipher()?
             .encrypt(
                 Nonce::from_slice(&nonce),
-                Payload { msg: &plain, aad: &aad },
+                Payload {
+                    msg: &plain,
+                    aad: &aad,
+                },
             )
             .map_err(|_| AppError::new("BUILTIN_VAULT_ENCRYPT_FAILED", "密码加密失败"))?;
         self.db()?.execute(
@@ -153,7 +154,8 @@ impl CredentialVault for BuiltinVault {
 
     fn delete(&self, id: &str) -> Result<()> {
         Self::associated_data(id)?;
-        self.db()?.execute("DELETE FROM builtin_secrets WHERE id=?1", [id])?;
+        self.db()?
+            .execute("DELETE FROM builtin_secrets WHERE id=?1", [id])?;
         Ok(())
     }
 }
@@ -174,16 +176,25 @@ mod tests {
             let vault = BuiltinVault::open(temp.path()).unwrap();
             vault.set(&id, &secret).unwrap();
             assert_eq!(vault.count().unwrap(), 1);
-            let raw: Vec<u8> = vault.db().unwrap()
-                .query_row("SELECT ciphertext FROM builtin_secrets WHERE id=?1",
-                    [&id], |row| row.get(0)).unwrap();
+            let raw: Vec<u8> = vault
+                .db()
+                .unwrap()
+                .query_row(
+                    "SELECT ciphertext FROM builtin_secrets WHERE id=?1",
+                    [&id],
+                    |row| row.get(0),
+                )
+                .unwrap();
             assert!(!String::from_utf8_lossy(&raw).contains("example-ssh-password"));
             assert_eq!(vault.get(&id).unwrap().unwrap().password, secret.password);
         }
         assert!(!temp.path().join("auto-vault.key").exists());
         assert!(!temp.path().join("builtin-vault.key").exists());
         let reopened = BuiltinVault::open(temp.path()).unwrap();
-        assert_eq!(reopened.get(&id).unwrap().unwrap().password, secret.password);
+        assert_eq!(
+            reopened.get(&id).unwrap().unwrap().password,
+            secret.password
+        );
     }
 
     #[test]
@@ -192,20 +203,33 @@ mod tests {
         let first = uuid::Uuid::new_v4().to_string();
         let second = uuid::Uuid::new_v4().to_string();
         let vault = BuiltinVault::open(temp.path()).unwrap();
-        vault.set(&first, &SecretInput {
-            password: Some("secret".into()),
-            passphrase: None,
-        }).unwrap();
-        vault.db().unwrap().execute(
-            "INSERT INTO builtin_secrets(id,nonce,ciphertext)
+        vault
+            .set(
+                &first,
+                &SecretInput {
+                    password: Some("secret".into()),
+                    passphrase: None,
+                },
+            )
+            .unwrap();
+        vault
+            .db()
+            .unwrap()
+            .execute(
+                "INSERT INTO builtin_secrets(id,nonce,ciphertext)
              SELECT ?1,nonce,ciphertext FROM builtin_secrets WHERE id=?2",
-            params![second, first],
-        ).unwrap();
+                params![second, first],
+            )
+            .unwrap();
         assert!(vault.get(&second).is_err());
-        vault.db().unwrap().execute(
-            "UPDATE builtin_secrets SET ciphertext=X'001122' WHERE id=?1",
-            [&first],
-        ).unwrap();
+        vault
+            .db()
+            .unwrap()
+            .execute(
+                "UPDATE builtin_secrets SET ciphertext=X'001122' WHERE id=?1",
+                [&first],
+            )
+            .unwrap();
         assert!(vault.get(&first).is_err());
     }
 
@@ -216,10 +240,15 @@ mod tests {
         let second = tempfile::tempdir().unwrap();
         let id = uuid::Uuid::new_v4().to_string();
         let vault = BuiltinVault::open(first.path()).unwrap();
-        vault.set(&id, &SecretInput {
-            password: Some("portable-secret".into()),
-            passphrase: None,
-        }).unwrap();
+        vault
+            .set(
+                &id,
+                &SecretInput {
+                    password: Some("portable-secret".into()),
+                    passphrase: None,
+                },
+            )
+            .unwrap();
         drop(vault);
         fs::copy(first.path().join(DB_FILE), second.path().join(DB_FILE)).unwrap();
         let other = BuiltinVault::open(second.path()).unwrap();
