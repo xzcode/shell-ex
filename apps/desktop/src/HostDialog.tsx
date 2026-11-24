@@ -53,8 +53,10 @@ export function HostDialog({
       return;
     }
     const mode = form.credentialStore || (host ? "system" : "local");
-    const requiresVault = mode === "local" && native &&
-      (Boolean(password || passphrase) || (host && (host.credentialStore || "system") !== "local"));
+    const persistentAuth = form.authMethod === "password" || form.authMethod === "key";
+    const suppliedCredential = form.authMethod === "password" ? password : form.authMethod === "key" ? passphrase : "";
+    const requiresVault = mode === "local" && native && persistentAuth &&
+      (Boolean(suppliedCredential) || (host && (host.credentialStore || "system") !== "local"));
     if (requiresVault && !vaultReady) {
       try {
         const status = await api<VaultStatus>("vault_status");
@@ -65,8 +67,8 @@ export function HostDialog({
     setError("");
     try {
       const secret: SecretInput = {
-        password: password || null,
-        passphrase: passphrase || null,
+        password: form.authMethod === "password" ? password || null : null,
+        passphrase: form.authMethod === "key" ? passphrase || null : null,
       };
       const saved = await api<Host>("host_save", {
         host: {
@@ -76,8 +78,8 @@ export function HostDialog({
           username: form.username.trim(),
           credentialStore: mode,
         },
-        secret: mode !== "session" && native ? secret : null,
-        rememberSecret: mode !== "session" && native,
+        secret: mode !== "session" && native && persistentAuth ? secret : null,
+        rememberSecret: mode !== "session" && native && persistentAuth,
       });
       setPassword("");
       setPassphrase("");
@@ -235,9 +237,11 @@ export function HostDialog({
           <Field label="认证方式" full>
             <select
               value={form.authMethod}
-              onChange={(e) =>
-                set("authMethod", e.target.value as Host["authMethod"])
-              }
+              onChange={(e) => {
+                set("authMethod", e.target.value as Host["authMethod"]);
+                setPassword("");
+                setPassphrase("");
+              }}
             >
               <option value="password">密码</option>
               <option value="key">私钥文件</option>
