@@ -283,9 +283,16 @@ impl LocalVault {
             "UPDATE vault_config SET salt=?1,nonce=?2,proof=?3 WHERE id=1",
             params![&new_salt, &new_nonce, &new_proof],
         )?;
+        // Keep the database and key locks together across commit so readers
+        // cannot observe new ciphertext with the previous decryption key.
+        let mut active_key = self.key()?;
+        if active_key.is_none() {
+            return Err(AppError::new("VAULT_LOCKED", "主密码更换过程中密码库已锁定"));
+        }
         tx.commit()?;
+        *active_key = Some(new_key);
+        drop(active_key);
         drop(db);
-        *self.key()? = Some(new_key);
         Ok(())
     }
 }
