@@ -12,15 +12,112 @@ concurrency:
   cancel-in-progress: false
 jobs:
   publish:
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master' && github.event.workflow_run.head_sha == 'e971c93e8e468971c41a403ee3729d6052442c17') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.id == 45346044016 && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'master' && github.event.workflow_run.head_sha == 'd89a4d717e36fdb4e592144e27f0757d9b2b92a8') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: e971c93e8e468971c41a403ee3729d6052442c17
-          persist-credentials: false
-      - name: Confirm installers and publish immutable release
+      - name: Verify and attach completed platform installers to existing release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/publish_verified_v032.py
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, tempfile
+
+          repo = "xzcode/shell-ex"
+          sha = "d89a4d717e36fdb4e592144e27f0757d9b2b92a8"
+          run_id = 45346044016
+          tag = "v0.3.2"
+          draft_tag = "build-" + sha[:12]
+          assert os.environ["GITHUB_REPOSITORY"] == repo
+          assert os.environ["GITHUB_REF"] == "refs/heads/master"
+
+          def gh(*args):
+              return subprocess.check_output(["gh", *args], text=True)
+
+          def api(endpoint):
+              return json.loads(gh("api", "repos/" + repo + "/" + endpoint))
+
+          def digest(path):
+              return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+          run = api(f"actions/runs/{run_id}")
+          assert run["head_sha"] == sha and run["head_branch"] == "master"
+          assert run["head_repository"]["full_name"] == repo
+          assert run["status"] == "completed"
+          attempt = str(run["run_attempt"])
+          stamp = f"r{run_id}.{attempt}"
+          run_url = f"https://github.com/{repo}/actions/runs/{run_id}"
+          jobs = api(f"actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100")["jobs"]
+          ref = api("git/ref/tags/" + tag)["object"]
+          assert ref["type"] == "commit" and ref["sha"] == sha
+          release = api("releases/tags/" + tag)
+          assert not release["draft"] and not release["prerelease"]
+          drafts = [r for r in api("releases?per_page=100")
+                    if r["draft"] and r["tag_name"] == draft_tag]
+          assert len(drafts) == 1 and drafts[0]["target_commitish"] == sha
+          draft_assets = {a["name"]: a for a in drafts[0]["assets"]}
+          platforms = [
+              ("macOS-Apple-Silicon", "aarch64-apple-darwin", ".dmg"),
+              ("Windows-x64", "x86_64-pc-windows-msvc", ".exe"),
+          ]
+          for platform, target, ext in platforms:
+              if not any(j["conclusion"] == "success" and target in j["name"] for j in jobs):
+                  print("Platform not successful; leaving unchanged:", platform)
+                  continue
+              manifest_name = f"Shell-EX-{platform}-{stamp}.build.json"
+              checksum_name = f"Shell-EX-{platform}-{stamp}.sha256"
+              installers = [n for n in draft_assets
+                            if n.startswith("Shell-EX_0.3.2_") and n.endswith(f"-{stamp}{ext}")]
+              assert len(installers) == 1, (platform, installers)
+              installer_name = installers[0]
+              names = [installer_name, checksum_name, manifest_name]
+              for name in names:
+                  assert draft_assets[name]["state"] == "uploaded"
+                  assert draft_assets[name]["digest"].startswith("sha256:")
+              with tempfile.TemporaryDirectory(prefix="shell-ex-publish-") as temp:
+                  directory = pathlib.Path(temp)
+                  args = ["release", "download", draft_tag, "--repo", repo, "--dir", temp]
+                  for name in names:
+                      args += ["--pattern", name]
+                  gh(*args)
+                  for name in names:
+                      p = directory / name
+                      assert p.stat().st_size == draft_assets[name]["size"]
+                      assert digest(p) == draft_assets[name]["digest"]
+                  manifest = json.loads((directory / manifest_name).read_text())
+                  assert manifest["commit"] == sha and manifest["target"] == target
+                  assert manifest["platform"] == platform and manifest["run_url"] == run_url
+                  assert str(manifest["run_attempt"]) == attempt
+                  assert set(manifest["assets"]) == {installer_name, checksum_name}
+                  checksum = (directory / checksum_name).read_text().splitlines()
+                  assert checksum == [digest(directory / installer_name)[7:] + "  " + installer_name]
+                  current = {a["name"]: a for a in api("releases/tags/" + tag)["assets"]}
+                  pending = []
+                  for name in names:
+                      if name in current:
+                          assert current[name]["digest"] == digest(directory / name)
+                      else:
+                          pending.append(str(directory / name))
+                  if pending:
+                      gh("release", "upload", tag, "--repo", repo, *pending)
+                  current = {a["name"]: a for a in api("releases/tags/" + tag)["assets"]}
+                  for name in names:
+                      assert current[name]["state"] == "uploaded"
+                      assert current[name]["digest"] == draft_assets[name]["digest"]
+                  print("Verified and published:", platform, installer_name)
+
+          final = api("releases/tags/" + tag)
+          names = [a["name"] for a in final["assets"] if a["state"] == "uploaded"]
+          available = [label for label, ext in [("Linux x64", ".deb"), ("macOS Apple Silicon", ".dmg"), ("Windows x64", ".exe")]
+                       if any(n.startswith("Shell-EX_0.3.2_") and n.endswith(ext) for n in names)]
+          notes = (final.get("body") or "").replace("macOS and Windows installers are not yet available for this version.", "")
+          marker = "\n\n**Verified platform availability:**"
+          notes = notes.split(marker)[0].rstrip() + marker + " " + ", ".join(available) + "."
+          notes += "\nNative GitHub Actions installers: " + run_url + ". macOS is ad-hoc signed, not notarized; Windows is unsigned."
+          cmd = ["release", "edit", tag, "--repo", repo, "--notes", notes]
+          if len(available) == 3:
+              cmd += ["--latest"]
+          gh(*cmd)
+          print("Release:", final["html_url"], "Platforms:", available)
+          PY
