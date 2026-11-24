@@ -1,3 +1,7 @@
+## v0.3.1 待打包状态（2026-11-24）
+
+[应用新代码](https://github.com/xzcode/shell-ex/commit/4669cc80e324092a15eed2ca904c8a050edd5fde) 已合并并通过独立测试，但 GitHub Actions 三平台包作业 [45337791471](https://github.com/xzcode/shell-ex/actions/runs/45337791471) 在取得 Runner 前失败，`runner_id=0` 且 `steps=[]`。macOS / Windows / Linux 新安装包**未生成**，正式 `v0.3.1` 标签和 Release 也未创建。禁止将 v0.3.0 的旧产物冒充新版本，待 Actions 资源问题排除后从 `master` 重建，见 [v0.3.1 版本说明](releases/v0.3.1.md)。
+
 # 构建、安装与签名更新
 
 ## v0.3.0 当前构建与发布状态（2026-11-24）

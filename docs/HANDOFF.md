@@ -68,3 +68,10 @@ ACK 无法恢复时，界面停止该终端输入、保留明确错误状态并�
 本地密码库：`crates/shell-ex-core/src/local_vault.rs` 实现 Argon2id/AES-256-GCM，`credentials.sqlite3` 在 Tauri app_data_dir。按主机选择 `local/system/session`，旧数据缺省 `system`；前端 `HostDialog.tsx` 合并认证页，`VaultDialog.tsx` 提供主密码生命周期，`SettingsDialog.tsx` 可锁定、解锁及换密码，`App.tsx` 连接前按需提示解锁。安全边界见 [安全说明](SECURITY.md)。
 
 请不要把本版构建草稿标记成正式 Release；GitHub Actions 发布作业在 Runner 分配前失败，尚未创建 `v0.3.0` 标签，详情与三平台校验值见发行说明。已存在 `release/v0.3.0` 发布工作流，可在 Actions 服务恢复后重试，也可通过 GitHub UI 发布当前草稿。
+
+
+## 2026-11-24 v0.3.1 免主密码自动加密（已合入）
+
+PR [#3](https://github.com/xzcode/shell-ex/pull/3) 已合并，变更提交 `4669cc80e324092a15eed2ca904c8a050edd5fde`。新建连接默认 `credentialStore=auto`：启动时自动生成 256 位随机密钥存储在应用目录 `auto-vault.key`，以 AES-256-GCM 加密凭据到 `auto-vault.sqlite3`。**不要求用户设置第二个主密码**。既有 `credentialStore=local` 继续用旧 Argon2id 主密码库，`system` 继续用 Keychain；旧凭据不清除。仅本次使用不落盘。安全边界：如果攻击者复制自动模式密钥和密文文件，则仍有能力解密，不能声称主密码级保护。
+
+[本地验证结果](releases/v0.3.1.md#实际代码验收与发行状态2026-11-24)：Rust 核心 25 项、React 生产构建、Chrome UI 1 项、原生 Linux Tauri 编译均成功。`GitHub Actions` 新版打包任务 Runner 分配失败 (`runner_id=0`, `steps=[]`)。**尚未发布 v0.3.1 Release**，请勿混用 v0.3.0 安装包。待 Actions 恢复后执行三平台构建、校验和正式发布。
