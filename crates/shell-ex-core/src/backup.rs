@@ -193,12 +193,16 @@ pub fn import(
     }
     // Complete schema/topology validation before the first credential-store mutation.
     store.validate_import(&data.hosts, &data.snippets, &data.settings, &data.workspace)?;
-    let mut previous = Vec::new();
-    for id in data.credentials.keys() {
-        previous.push((id.clone(), vault.get(id)?));
+    // Resolve the TARGET location from the imported host rather than the old
+    // local host record. This keeps restored credentials in the intended vault.
+    let mut previous: Vec<(Host, Option<SecretInput>)> = Vec::new();
+    for host in &data.hosts {
+        if data.credentials.contains_key(&host.id) {
+            previous.push((host.clone(), vault.get_for_host(host)?));
+        }
     }
-    for (index, (id, _)) in previous.iter().enumerate() {
-        if let Err(error) = vault.set(id, &data.credentials[id]) {
+    for (index, (host, _)) in previous.iter().enumerate() {
+        if let Err(error) = vault.set_for_host(host, &data.credentials[&host.id]) {
             return Err(restore_error(vault, &previous[..=index], error));
         }
     }
@@ -213,14 +217,14 @@ pub fn import(
 }
 fn restore_error(
     vault: &dyn CredentialVault,
-    previous: &[(String, Option<SecretInput>)],
+    previous: &[(Host, Option<SecretInput>)],
     original: AppError,
 ) -> AppError {
     let mut failed = 0;
-    for (id, old) in previous.iter().rev() {
+    for (host, old) in previous.iter().rev() {
         let result = match old {
-            Some(secret) => vault.set(id, secret),
-            None => vault.delete(id),
+            Some(secret) => vault.set_for_host(host, secret),
+            None => vault.delete_for_host(host),
         };
         if result.is_err() {
             failed += 1;
@@ -229,7 +233,7 @@ fn restore_error(
     if failed == 0 {
         original
     } else {
-        AppError::new("BACKUP_ROLLBACK_FAILED",format!("导入失败（{}），且 {failed} 项凭据未能恢复。配置未导入；请解锁系统凭据库并使用备份重新恢复。",original.code))
+        AppError::new("BACKUP_ROLLBACK_FAILED",format!("导入失败（{}），且 {failed} 项凭据未能恢复。配置未导入；请解锁对应的密码库并使用备份重新恢复。",original.code))
     }
 }
 

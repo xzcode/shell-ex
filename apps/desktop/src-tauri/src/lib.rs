@@ -2,7 +2,8 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
 use shell_ex_core::{
     backup,
-    credentials::{CredentialVault, SystemVault},
+    credentials::{CredentialVault, RoutedVault},
+    local_vault::{LocalVault, VaultStatus},
     docker::{ContainerInfo, DockerImage, DockerService},
     error::{AppError, Result},
     files::{EditorFile, FileEntry, FileService},
@@ -28,7 +29,7 @@ use zeroize::Zeroizing;
 
 struct AppState {
     store: Arc<Storage>,
-    vault: Arc<SystemVault>,
+    vault: Arc<RoutedVault>,
     ssh: Arc<SshManager>,
     pty: Arc<PtyManager>,
     files: FileService,
@@ -42,6 +43,8 @@ struct AppState {
 impl AppState {
     fn new(path: PathBuf) -> Result<Self> {
         let store = Arc::new(Storage::open(&path.join("shell-ex.sqlite3"))?);
+        let local_vault = Arc::new(LocalVault::open(&path.join("credentials.sqlite3"))?);
+        let vault = Arc::new(RoutedVault::new(store.clone(), local_vault));
         let ssh = Arc::new(SshManager::new());
         Ok(Self {
             transfers: Arc::new(TransferManager::new(
@@ -53,7 +56,7 @@ impl AppState {
             docker: DockerService::new(ssh.clone()),
             tunnels: Arc::new(TunnelManager::new(ssh.clone())),
             store,
-            vault: Arc::new(SystemVault),
+            vault,
             ssh,
             pty: Arc::new(PtyManager::new()),
             probes: Mutex::new(HashMap::new()),
@@ -312,48 +315,71 @@ async fn host_save(
     let mutation = state.mutation.clone();
     tokio::task::spawn_blocking(move || {
         let _guard = mutation.lock().map_err(AppError::internal)?;
+        let old = store.host(&host.id).ok();
+        let changing = old.as_ref().is_some_and(|h| h.credential_store != host.credential_store);
         let has_secret = secret.as_ref().is_some_and(|s| {
             s.password.as_ref().is_some_and(|p| !p.is_empty())
                 || s.passphrase.as_ref().is_some_and(|p| !p.is_empty())
         });
-        let previous = if remember_secret && has_secret {
-            Some(vault.get(&host.id)?)
+        let next_secret = if host.credential_store == "session" {
+            None
+        } else if remember_secret && has_secret {
+            secret
+        } else if changing {
+            // Migration is explicit; copy old Keychain/local secret before switching.
+            match old.as_ref() {
+                Some(previous_host) => vault.get_for_host(previous_host)?,
+                None => None,
+            }
         } else {
             None
         };
-        if remember_secret && has_secret {
-            if let Err(error) = vault.set(&host.id, secret.as_ref().unwrap()) {
-                let restored = match previous.as_ref().and_then(|p| p.as_ref()) {
-                    Some(old) => vault.set(&host.id, old),
-                    None => vault.delete(&host.id),
-                };
-                if restored.is_err() {
-                    return Err(AppError::new(
-                        "CREDENTIAL_ROLLBACK_FAILED",
-                        "系统凭据写入失败且无法确认恢复状态，请解锁凭据库后重新保存。",
-                    ));
-                }
-                return Err(error);
-            }
+        let previous_target = if next_secret.is_some() {
+            Some(vault.get_for_host(&host)?)
+        } else {
+            None
+        };
+        if let Some(secret) = next_secret.as_ref() {
+            vault.set_for_host(&host, secret)?;
         }
-        match store.save_host(host.clone()) {
-            Ok(host) => Ok(host),
+        let saved = match store.save_host(host.clone()) {
+            Ok(saved) => saved,
             Err(error) => {
-                if let Some(previous) = previous {
+                if let Some(previous) = previous_target {
                     let restored = match previous {
-                        Some(s) => vault.set(&host.id, &s),
-                        None => vault.delete(&host.id),
+                        Some(s) => vault.set_for_host(&host, &s),
+                        None => vault.delete_for_host(&host),
                     };
                     if restored.is_err() {
                         return Err(AppError::new(
                             "CREDENTIAL_ROLLBACK_FAILED",
-                            "保存主机失败，且旧凭据未能恢复。请解锁凭据库后重新保存。",
+                            "保存主机失败且新凭据回滚失败，请检查密码库后重试。",
                         ));
                     }
                 }
-                Err(error)
+                return Err(error);
+            }
+        };
+        if changing {
+            if let Some(previous_host) = old.as_ref() {
+                if let Err(e) = vault.delete_for_host(previous_host) {
+                    let host_restored = store.save_host(previous_host.clone());
+                    let secret_restored = match previous_target {
+                        Some(Some(s)) => vault.set_for_host(&host, &s),
+                        Some(None) => vault.delete_for_host(&host),
+                        None => Ok(()),
+                    };
+                    if host_restored.is_err() || secret_restored.is_err() {
+                        return Err(AppError::new(
+                            "CREDENTIAL_ROLLBACK_FAILED",
+                            "切换凭据存储失败且回滚不完整；请检查旧凭据位置。",
+                        ));
+                    }
+                    return Err(e);
+                }
             }
         }
+        Ok(saved)
     })
     .await
     .map_err(join_error)?
@@ -370,7 +396,7 @@ async fn host_delete(state: State<'_, AppState>, id: String) -> Result<()> {
         let _guard = mutation.lock().map_err(AppError::internal)?;
         let host = store.host(&id)?;
         store.delete_host(&id)?;
-        if let Err(e) = vault.delete(&id) {
+        if let Err(e) = vault.delete_for_host(&host) {
             store.save_host(host)?;
             return Err(e);
         }
@@ -381,20 +407,72 @@ async fn host_delete(state: State<'_, AppState>, id: String) -> Result<()> {
 }
 #[tauri::command]
 async fn host_secret_status(state: State<'_, AppState>, id: String) -> Result<bool> {
-    state.store.host(&id)?;
+    let host = state.store.host(&id)?;
     let vault = state.vault.clone();
-    tokio::task::spawn_blocking(move || vault.get(&id).map(|v| v.is_some()))
+    tokio::task::spawn_blocking(move || vault.get_for_host(&host).map(|v| v.is_some()))
         .await
         .map_err(join_error)?
 }
 #[tauri::command]
 async fn host_secret_delete(state: State<'_, AppState>, id: String) -> Result<()> {
-    state.store.host(&id)?;
+    let host = state.store.host(&id)?;
     let vault = state.vault.clone();
     let mutation = state.mutation.clone();
     tokio::task::spawn_blocking(move || {
         let _guard = mutation.lock().map_err(AppError::internal)?;
-        vault.delete(&id)
+        vault.delete_for_host(&host)
+    })
+    .await
+    .map_err(join_error)?
+}
+#[tauri::command]
+fn vault_status(state: State<'_, AppState>) -> Result<VaultStatus> {
+    state.vault.local().status()
+}
+#[tauri::command]
+async fn vault_initialize(state: State<'_, AppState>, master_password: String) -> Result<()> {
+    let password = Zeroizing::new(master_password);
+    let vault = state.vault.clone();
+    let mutation = state.mutation.clone();
+    tokio::task::spawn_blocking(move || {
+        let _guard = mutation.lock().map_err(AppError::internal)?;
+        vault.local().initialize(&password)
+    })
+    .await
+    .map_err(join_error)?
+}
+#[tauri::command]
+async fn vault_unlock(state: State<'_, AppState>, master_password: String) -> Result<()> {
+    let password = Zeroizing::new(master_password);
+    let vault = state.vault.clone();
+    tokio::task::spawn_blocking(move || vault.local().unlock(&password))
+        .await
+        .map_err(join_error)?
+}
+#[tauri::command]
+async fn vault_lock(state: State<'_, AppState>) -> Result<()> {
+    let vault = state.vault.clone();
+    let mutation = state.mutation.clone();
+    tokio::task::spawn_blocking(move || {
+        let _guard = mutation.lock().map_err(AppError::internal)?;
+        vault.local().lock()
+    })
+    .await
+    .map_err(join_error)?
+}
+#[tauri::command]
+async fn vault_change_password(
+    state: State<'_, AppState>,
+    old_password: String,
+    new_password: String,
+) -> Result<()> {
+    let old = Zeroizing::new(old_password);
+    let new = Zeroizing::new(new_password);
+    let vault = state.vault.clone();
+    let mutation = state.mutation.clone();
+    tokio::task::spawn_blocking(move || {
+        let _guard = mutation.lock().map_err(AppError::internal)?;
+        vault.local().change_password(&old, &new)
     })
     .await
     .map_err(join_error)?
@@ -950,6 +1028,11 @@ pub fn run() {
             host_delete,
             host_secret_status,
             host_secret_delete,
+            vault_status,
+            vault_initialize,
+            vault_unlock,
+            vault_lock,
+            vault_change_password,
             ssh_probe,
             ssh_trust,
             ssh_connect,
@@ -999,6 +1082,7 @@ pub fn run() {
     app.run(|handle, event| {
         if let tauri::RunEvent::Exit = event {
             let state = handle.state::<AppState>();
+            let _ = state.vault.local().lock();
             state.pty.close_all();
             tauri::async_runtime::block_on(async {
                 let _ = tokio::time::timeout(Duration::from_secs(4), async {
