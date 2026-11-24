@@ -365,6 +365,16 @@ async fn host_save(
         if changing {
             if let Some(previous_host) = old.as_ref() {
                 if let Err(e) = vault.delete_for_host(previous_host) {
+                    // An unavailable legacy Keychain must not prevent a user from
+                    // switching to a local vault when they explicitly supplied new
+                    // credentials. Keep the old Keychain record untouched; the UI
+                    // warns that its old copy might need manual cleanup.
+                    if previous_host.credential_store == "system"
+                        && host.credential_store == "local"
+                        && has_secret
+                    {
+                        return Ok(saved);
+                    }
                     let host_restored = store.save_host(previous_host.clone());
                     let secret_restored = match previous_target {
                         Some(Some(s)) => vault.set_for_host(&host, &s),

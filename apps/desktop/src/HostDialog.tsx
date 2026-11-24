@@ -87,7 +87,12 @@ export function HostDialog({
         });
         setProbe(result);
         notify("SSH 握手完成，连接配置已保存；尚未进行身份认证。", "success");
-      } else onSaved(saved);
+      } else {
+        if (host && (host.credentialStore || "system") === "system" && mode === "local") {
+          notify("已切换到应用内加密库。如旧系统凭据库无法访问，原副本可能仍保留，请在系统 Keychain 中检查。", "info");
+        }
+        onSaved(saved);
+      }
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -240,7 +245,7 @@ export function HostDialog({
               <option value="interactive">交互式认证 / MFA</option>
             </select>
           </Field>
-          {form.authMethod === "password" && (
+          {form.authMethod === "password" && (form.credentialStore || (host ? "system" : "local")) !== "session" && (
             <Field
               label="登录密码"
               full
@@ -287,14 +292,14 @@ export function HostDialog({
                   </button>
                 </div>
               </Field>
-              <Field label="私钥口令（如果有）" full>
+              {(form.credentialStore || (host ? "system" : "local")) !== "session" && <Field label="私钥口令（如果有）" full>
                 <input
                   type="password"
                   autoComplete="new-password"
                   value={passphrase}
                   onChange={(e) => setPassphrase(e.target.value)}
                 />
-              </Field>
+              </Field>}
             </>
           )}
           {form.authMethod === "agent" && (
