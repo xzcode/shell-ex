@@ -88,8 +88,8 @@ impl RoutedVault {
     pub fn local(&self) -> &LocalVault {
         &self.local
     }
-    pub fn automatic(&self) -> &AutoVault {
-        &self.automatic
+    pub fn automatic(&self) -> Option<&AutoVault> {
+        self.automatic.as_deref()
     }
     pub fn get_by_mode(&self, id: &str, mode: &str) -> Result<Option<SecretInput>> {
         match mode {
