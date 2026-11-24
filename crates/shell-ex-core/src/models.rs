@@ -165,7 +165,8 @@ mod credential_store_compat_tests {
         let old: Host = serde_json::from_value(raw).unwrap();
         assert_eq!(old.credential_store, "system");
         let serialized = serde_json::to_string(&old).unwrap();
-        assert!(serialized.contains("\\"credentialStore\\":\\"system\\""));
+        let json: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(json["credentialStore"], "system");
         assert!(!serialized.contains("password123"));
     }
 }
