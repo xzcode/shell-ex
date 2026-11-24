@@ -287,7 +287,10 @@ impl LocalVault {
         // cannot observe new ciphertext with the previous decryption key.
         let mut active_key = self.key()?;
         if active_key.is_none() {
-            return Err(AppError::new("VAULT_LOCKED", "主密码更换过程中密码库已锁定"));
+            return Err(AppError::new(
+                "VAULT_LOCKED",
+                "主密码更换过程中密码库已锁定",
+            ));
         }
         tx.commit()?;
         *active_key = Some(new_key);
