@@ -66,7 +66,10 @@ impl AutoVault {
             }
             let mut file = options.open(&key_path)?;
             if file.metadata()?.len() != 32 {
-                return Err(AppError::new("AUTO_VAULT_KEY_INVALID", "本地加密密钥格式损坏"));
+                return Err(AppError::new(
+                    "AUTO_VAULT_KEY_INVALID",
+                    "本地加密密钥格式损坏",
+                ));
             }
             let mut value = Zeroizing::new([0u8; 32]);
             file.read_exact(&mut *value)?;
@@ -114,9 +117,9 @@ impl AutoVault {
     }
 
     fn db(&self) -> Result<MutexGuard<'_, Connection>> {
-        self.database.lock().map_err(|_| {
-            AppError::new("AUTO_VAULT_LOCK", "本地加密库正被使用，请重试")
-        })
+        self.database
+            .lock()
+            .map_err(|_| AppError::new("AUTO_VAULT_LOCK", "本地加密库正被使用，请重试"))
     }
 
     fn random<const N: usize>() -> [u8; N] {
@@ -138,11 +141,9 @@ impl AutoVault {
     }
 
     pub fn count(&self) -> Result<u64> {
-        let count: i64 = self.db()?.query_row(
-            "SELECT COUNT(*) FROM auto_secrets",
-            [],
-            |row| row.get(0),
-        )?;
+        let count: i64 = self
+            .db()?
+            .query_row("SELECT COUNT(*) FROM auto_secrets", [], |row| row.get(0))?;
         Ok(count.max(0) as u64)
     }
 }
@@ -162,17 +163,27 @@ impl CredentialVault for AutoVault {
             return Ok(None);
         };
         if nonce.len() != 12 {
-            return Err(AppError::new("AUTO_VAULT_CORRUPT", "保存的密码记录格式损坏"));
+            return Err(AppError::new(
+                "AUTO_VAULT_CORRUPT",
+                "保存的密码记录格式损坏",
+            ));
         }
-        let plain = Zeroizing::new(self.cipher()?
-            .decrypt(
-                Nonce::from_slice(&nonce),
-                Payload { msg: &ciphertext, aad: &aad },
-            )
-            .map_err(|_| AppError::new(
-                "AUTO_VAULT_AUTH_FAILED",
-                "加密记录已损坏或当前密钥不匹配，请检查应用数据备份",
-            ))?);
+        let plain = Zeroizing::new(
+            self.cipher()?
+                .decrypt(
+                    Nonce::from_slice(&nonce),
+                    Payload {
+                        msg: &ciphertext,
+                        aad: &aad,
+                    },
+                )
+                .map_err(|_| {
+                    AppError::new(
+                        "AUTO_VAULT_AUTH_FAILED",
+                        "加密记录已损坏或当前密钥不匹配，请检查应用数据备份",
+                    )
+                })?,
+        );
         Ok(Some(serde_json::from_slice(&plain)?))
     }
 
@@ -180,8 +191,15 @@ impl CredentialVault for AutoVault {
         let aad = Self::aad(id)?;
         let nonce = Self::random::<12>();
         let plain = Zeroizing::new(serde_json::to_vec(secret)?);
-        let ciphertext = self.cipher()?
-            .encrypt(Nonce::from_slice(&nonce), Payload { msg: &plain, aad: &aad })
+        let ciphertext = self
+            .cipher()?
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                Payload {
+                    msg: &plain,
+                    aad: &aad,
+                },
+            )
             .map_err(|_| AppError::new("AUTO_VAULT_ENCRYPT_FAILED", "本地加密失败"))?;
         self.db()?.execute(
             "INSERT INTO auto_secrets(id,nonce,ciphertext) VALUES(?1,?2,?3)
@@ -193,7 +211,8 @@ impl CredentialVault for AutoVault {
 
     fn delete(&self, id: &str) -> Result<()> {
         Self::aad(id)?;
-        self.db()?.execute("DELETE FROM auto_secrets WHERE id=?1", [id])?;
+        self.db()?
+            .execute("DELETE FROM auto_secrets WHERE id=?1", [id])?;
         Ok(())
     }
 }
@@ -215,19 +234,32 @@ mod tests {
             vault.set(&id, &secret).unwrap();
             assert_eq!(vault.count().unwrap(), 1);
             assert_eq!(vault.get(&id).unwrap().unwrap().password, secret.password);
-            let ciphertext: Vec<u8> = vault.db().unwrap()
-                .query_row("SELECT ciphertext FROM auto_secrets WHERE id=?1", [&id], |r| r.get(0))
+            let ciphertext: Vec<u8> = vault
+                .db()
+                .unwrap()
+                .query_row(
+                    "SELECT ciphertext FROM auto_secrets WHERE id=?1",
+                    [&id],
+                    |r| r.get(0),
+                )
                 .unwrap();
             assert!(!String::from_utf8_lossy(&ciphertext).contains("server-password"));
         }
         let reopened = AutoVault::open(temp.path()).unwrap();
-        assert_eq!(reopened.get(&id).unwrap().unwrap().password, secret.password);
+        assert_eq!(
+            reopened.get(&id).unwrap().unwrap().password,
+            secret.password
+        );
         let second = uuid::Uuid::new_v4().to_string();
-        reopened.db().unwrap().execute(
-            "INSERT INTO auto_secrets(id,nonce,ciphertext)
+        reopened
+            .db()
+            .unwrap()
+            .execute(
+                "INSERT INTO auto_secrets(id,nonce,ciphertext)
              SELECT ?1,nonce,ciphertext FROM auto_secrets WHERE id=?2",
-            params![second, id],
-        ).unwrap();
+                params![second, id],
+            )
+            .unwrap();
         assert!(reopened.get(&second).is_err());
     }
 
@@ -235,9 +267,16 @@ mod tests {
     fn never_regenerates_a_lost_key_for_existing_ciphertext() {
         let temp = tempfile::tempdir().unwrap();
         let id = uuid::Uuid::new_v4().to_string();
-        AutoVault::open(temp.path()).unwrap().set(
-            &id, &SecretInput { password: Some("secret".into()), passphrase: None },
-        ).unwrap();
+        AutoVault::open(temp.path())
+            .unwrap()
+            .set(
+                &id,
+                &SecretInput {
+                    password: Some("secret".into()),
+                    passphrase: None,
+                },
+            )
+            .unwrap();
         fs::remove_file(temp.path().join(KEY_FILE)).unwrap();
         assert!(AutoVault::open(temp.path()).is_err());
     }
