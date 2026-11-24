@@ -147,3 +147,25 @@ impl Default for Workspace {
         }
     }
 }
+
+#[cfg(test)]
+mod credential_store_compat_tests {
+    use super::*;
+    #[test]
+    fn legacy_saved_hosts_remain_on_system_credentials_without_plaintext() {
+        let raw = serde_json::json!({
+            "id": uuid::Uuid::new_v4().to_string(),
+            "name": "Legacy", "address": "example.org", "port": 22,
+            "username": "ubuntu", "group": "Old",
+            "authMethod": "password", "privateKeyPath": null,
+            "proxy": null, "jumpHostId": null, "startupDirectory": null,
+            "keepAliveSeconds": 30, "connectTimeoutSeconds": 15,
+            "favorite": false, "color": "#aaa", "notes": "existing connection"
+        });
+        let old: Host = serde_json::from_value(raw).unwrap();
+        assert_eq!(old.credential_store, "system");
+        let serialized = serde_json::to_string(&old).unwrap();
+        assert!(serialized.contains("\\"credentialStore\\":\\"system\\""));
+        assert!(!serialized.contains("password123"));
+    }
+}
