@@ -72,7 +72,7 @@ export function SettingsDialog({
         .catch((e) =>
           setUpdate({
             configured: false,
-            version: "0.3.1",
+            version: "0.3.2",
             reason: errorText(e),
           }),
         );
@@ -161,7 +161,7 @@ export function SettingsDialog({
       footer={
         <>
           <span className="footer-note">
-            Shell EX · {update?.version || "0.3.1"}
+            Shell EX · {update?.version || "0.3.2"}
           </span>
           <button className="button secondary" onClick={onClose}>
             取消
