@@ -130,12 +130,12 @@ impl LocalVault {
         let count = self
             .db()?
             .query_row("SELECT COUNT(*) FROM local_secrets", [], |r| {
-                r.get::<_, u64>(0)
+                r.get::<_, i64>(0)
             })?;
         Ok(VaultStatus {
             initialized: self.config()?.is_some(),
             unlocked: self.key()?.is_some(),
-            count,
+            count: count.max(0) as u64,
         })
     }
     pub fn initialize(&self, passphrase: &str) -> Result<()> {
