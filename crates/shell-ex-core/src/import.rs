@@ -24,7 +24,7 @@ fn new_host(alias: &str) -> Host {
             .unwrap_or_default(),
         group: "SSH config".into(),
         auth_method: "agent".into(),
-        credential_store: "local".into(),
+        credential_store: "auto".into(),
         private_key_path: None,
         proxy: None,
         jump_host_id: None,

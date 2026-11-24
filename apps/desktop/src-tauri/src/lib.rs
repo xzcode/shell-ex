@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
 use shell_ex_core::{
+    auto_vault::AutoVault,
     backup,
     credentials::{CredentialVault, RoutedVault},
     docker::{ContainerInfo, DockerImage, DockerService},
@@ -44,7 +45,8 @@ impl AppState {
     fn new(path: PathBuf) -> Result<Self> {
         let store = Arc::new(Storage::open(&path.join("shell-ex.sqlite3"))?);
         let local_vault = Arc::new(LocalVault::open(&path.join("credentials.sqlite3"))?);
-        let vault = Arc::new(RoutedVault::new(store.clone(), local_vault));
+        let auto_vault = Arc::new(AutoVault::open(&path)?);
+        let vault = Arc::new(RoutedVault::new(store.clone(), local_vault, auto_vault));
         let ssh = Arc::new(SshManager::new());
         Ok(Self {
             transfers: Arc::new(TransferManager::new(
@@ -370,7 +372,7 @@ async fn host_save(
                     // credentials. Keep the old Keychain record untouched; the UI
                     // warns that its old copy might need manual cleanup.
                     if previous_host.credential_store == "system"
-                        && host.credential_store == "local"
+                        && ["local", "auto"].contains(&host.credential_store.as_str())
                         && has_secret
                     {
                         return Ok(saved);

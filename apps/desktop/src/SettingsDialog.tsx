@@ -72,7 +72,7 @@ export function SettingsDialog({
         .catch((e) =>
           setUpdate({
             configured: false,
-            version: "0.3.0",
+            version: "0.3.1",
             reason: errorText(e),
           }),
         );
@@ -161,7 +161,7 @@ export function SettingsDialog({
       footer={
         <>
           <span className="footer-note">
-            Shell EX · {update?.version || "0.3.0"}
+            Shell EX · {update?.version || "0.3.1"}
           </span>
           <button className="button secondary" onClick={onClose}>
             取消
@@ -325,9 +325,12 @@ export function SettingsDialog({
               <h3>安全与凭据</h3>
               <div className="info-note">
                 <ShieldCheck size={20} />
-                <p>默认将 SSH 密码和私钥口令加密存放在 Shell EX 本地目录；已有旧连接继续使用系统凭据库。主机配置中不包含明文密码。</p>
+                <p>新连接默认自动加密保存 SSH 密码，无需设置主密码。加密密钥位于本机应用数据目录，主机配置不包含明文密码；已有旧版连接仍按原有方式读取。</p>
               </div>
-              <h4>应用内加密密码库</h4>
+              <h4>默认：应用内自动加密</h4>
+              <p className="section-description">新建连接后会自动生成安装专属随机密钥，使用 AES-256-GCM 加密保存。无需解锁。注意：若其他人能同时读取本机密钥文件与加密库，也能还原密码；请保护设备登录账户和磁盘。</p>
+              {vaultStatus?.initialized && <h4>旧版主密码库（兼容）</h4>}
+              {vaultStatus?.initialized && <>
               <div className="settings-list">
                 <div>
                   <strong>密码库状态</strong>
@@ -345,7 +348,7 @@ export function SettingsDialog({
                 <button className="button secondary" disabled={!native}
                   onClick={() => setVaultDialog("access")}>
                   <KeyRound size={14} />
-                  {vaultStatus?.initialized ? "解锁密码库" : "设置主密码"}
+                  解锁旧版密码库
                 </button>
                 <button className="button secondary"
                   disabled={!native || !vaultStatus?.unlocked}
@@ -360,7 +363,8 @@ export function SettingsDialog({
                   disabled={!native || !vaultStatus?.initialized}
                   onClick={() => setVaultDialog("change")}>修改主密码</button>
               </div>
-              <p className="section-description">使用 Argon2id + AES-256-GCM，加密文件保存在应用数据目录。关闭应用后清除解锁密钥；忘记主密码无法恢复已加密的 SSH 密码。</p>
+              <p className="section-description">仅旧版手动设置的主密码库需要解锁；默认自动加密库不会要求输入主密码。</p>
+              </>}
               <div className="settings-list">
                 <div>
                   <strong>主机指纹校验</strong>

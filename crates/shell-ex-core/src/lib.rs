@@ -1,3 +1,4 @@
+pub mod auto_vault;
 pub mod backup;
 pub mod credentials;
 pub mod docker;
