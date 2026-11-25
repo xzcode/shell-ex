@@ -642,11 +642,13 @@ export function FilePanel({
               </th>
               {columnLabels.map((label, index) => (
                 <th key={label} title={tr(label)} className="resizable-file-heading">
-                  <span>{tr(label)}</span>
-                  <ResizeHandle column label={tr("调整列宽：{0}", tr(label))}
-                    value={columnWidths[index]} min={columnMin[index]} max={1400}
-                    onChange={(width) => onColumnWidth(index, width)}
-                    onReset={() => onColumnWidth(index, defaultWorkspace.fileColumnWidths[index])} />
+                  <div className="file-heading-content">
+                    <span>{tr(label)}</span>
+                    <ResizeHandle column label={tr("调整列宽：{0}", tr(label))}
+                      value={columnWidths[index]} min={columnMin[index]} max={1400}
+                      onChange={(width) => onColumnWidth(index, width)}
+                      onReset={() => onColumnWidth(index, defaultWorkspace.fileColumnWidths[index])} />
+                  </div>
                 </th>
               ))}
             </tr>

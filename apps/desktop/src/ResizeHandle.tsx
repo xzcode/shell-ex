@@ -1,11 +1,13 @@
-import { useRef, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 
 export function clampWidth(value: unknown, fallback: number, min: number, max: number): number {
   const n = typeof value === "number" && Number.isFinite(value) ? value : fallback;
   return Math.round(Math.max(min, Math.min(max, n)));
 }
 
-/** Pointer capture keeps resizing reliable even when crossing a table or terminal. */
+/** Desktop mouse resizing uses window listeners instead of depending on
+ * pointer capture on a positioned table cell (which can differ in WebKit).
+ * The separator also supports keyboard changes and double-click reset. */
 export function ResizeHandle({
   label, value, min, max, direction = 1, measured, onChange, onReset, column = false,
 }: {
@@ -13,34 +15,46 @@ export function ResizeHandle({
   direction?: 1 | -1; measured?: () => number;
   onChange: (width: number) => void; onReset?: () => void; column?: boolean;
 }) {
-  const drag = useRef<{ pointer: number; x: number; width: number } | null>(null);
-  function start(e: PointerEvent<HTMLDivElement>) {
+  const cleanup = useRef<(() => void) | null>(null);
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => () => cleanup.current?.(), []);
+  function start(e: MouseEvent<HTMLDivElement>) {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    drag.current = { pointer: e.pointerId, x: e.clientX, width: measured?.() ?? value };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  }
-  function stop(e: PointerEvent<HTMLDivElement>) {
-    if (drag.current?.pointer !== e.pointerId) return;
-    drag.current = null;
-    if (e.currentTarget.hasPointerCapture(e.pointerId))
-      e.currentTarget.releasePointerCapture(e.pointerId);
+    cleanup.current?.();
+    const x = e.clientX;
+    const width = measured?.() ?? value;
+    const previousCursor = document.body.style.cursor;
+    document.body.style.cursor = "col-resize";
+    document.body.classList.add("shell-resizing");
+    setDragging(true);
+    function move(event: globalThis.MouseEvent) {
+      if (event.buttons === 0) { end(); return; }
+      event.preventDefault();
+      onChange(clampWidth(width + direction * (event.clientX - x), value, min, max));
+    }
+    function end() {
+      window.removeEventListener("mousemove", move, true);
+      window.removeEventListener("mouseup", end, true);
+      window.removeEventListener("blur", end);
+      document.body.style.cursor = previousCursor;
+      document.body.classList.remove("shell-resizing");
+      cleanup.current = null;
+      setDragging(false);
+    }
+    cleanup.current = end;
+    window.addEventListener("mousemove", move, true);
+    window.addEventListener("mouseup", end, true);
+    window.addEventListener("blur", end);
   }
   return <div
-    className={column ? "column-resize-handle" : "resize-handle vertical wide-hit"}
+    className={(column ? "column-resize-handle" : "resize-handle vertical wide-hit") + (dragging ? " resizing" : "")}
     role="separator" aria-orientation="vertical" aria-label={label}
     aria-valuemin={min} aria-valuemax={max}
     aria-valuenow={clampWidth(value, min, min, max)}
     title={label} tabIndex={0}
-    onPointerDown={start}
-    onPointerMove={(e) => {
-      const d = drag.current;
-      if (d?.pointer === e.pointerId)
-        onChange(clampWidth(d.width + direction * (e.clientX - d.x), value, min, max));
-    }}
-    onPointerUp={stop} onPointerCancel={stop}
-    onLostPointerCapture={() => { drag.current = null; }}
+    onMouseDown={start}
     onClick={(e) => e.stopPropagation()}
     onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
     onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); onReset?.(); }}

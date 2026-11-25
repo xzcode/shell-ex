@@ -90,6 +90,12 @@ test("dock, directory tree and individual columns resize and persist", async ({ 
   const nameInitial = (await name.boundingBox())!.width;
   const sizeInitial = (await size.boundingBox())!.width;
   const nameHandle = page.getByRole("separator", { name: "调整列宽：文件名", exact: true });
+  await page.evaluate(() => {
+    Element.prototype.setPointerCapture = () => { throw new Error("Pointer capture unavailable"); };
+  });
+  expect((await nameHandle.boundingBox())!.width).toBeGreaterThanOrEqual(12);
+  await expect(nameHandle).toHaveCSS("cursor", "col-resize");
+
   await drag(page, nameHandle, 100);
   await expect.poll(async () => Math.round((await name.boundingBox())!.width)).toBe(Math.round(nameInitial + 100));
   expect(Math.abs((await size.boundingBox())!.width - sizeInitial)).toBeLessThanOrEqual(1);

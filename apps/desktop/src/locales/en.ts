@@ -707,5 +707,13 @@ export const en: Readonly<Record<string, string>> = {
   "停靠到工作台": "Dock to workspace",
   "停靠监控面板": "Dock monitor panel",
   "跟随主窗口当前 SSH 会话 · 独立监控窗口仅查看数据": "Follows the active SSH session in the main window · Read-only monitoring",
-  "The monitored session has changed or closed": "The monitored session has changed or closed"
+  "The monitored session has changed or closed": "The monitored session has changed or closed",
+  "在文件夹中显示": "Show in folder",
+  "打开已下载文件": "Open downloaded file",
+  "复制本地路径": "Copy local path",
+  "传输记录菜单": "Transfer context menu",
+  "仅可打开已完成的下载文件": "Only completed downloads can be opened",
+  "下载的文件或所在文件夹已不存在": "The downloaded file or its folder no longer exists",
+  "下载文件的本地路径已发生变化": "The downloaded file path has changed",
+  "无法打开已下载文件或文件夹": "Could not open the downloaded file or folder"
 };

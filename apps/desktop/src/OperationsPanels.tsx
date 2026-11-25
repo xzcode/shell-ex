@@ -1,5 +1,6 @@
 import { tr } from "./i18n";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -16,6 +17,9 @@ import {
   Square,
   RotateCw,
   FileText,
+  FolderOpen,
+  ExternalLink,
+  Copy,
   ArrowRight,
 } from "lucide-react";
 import type {
@@ -31,6 +35,12 @@ import { Busy, Empty, ErrorBox, Field, IconButton, Modal } from "./ui";
 import { sendTerminalInput } from "./terminalInput";
 export function TransferPanel({ notify }: { notify: Notify }) {
   const [tasks, setTasks] = useState<Transfer[]>([]);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [opening, setOpening] = useState<Set<string>>(new Set());
+  const menuRef = useRef<HTMLDivElement>(null);
+  const pending = useRef(new Set<string>());
+  const selected = menu ? tasks.find((task) => task.id === menu.id) : undefined;
+  const isCompletedDownload = (task: Transfer) => task.direction === "download" && task.status.toLowerCase() === "completed";
   const [error, setError] = useState("");
   const load = useCallback(async () => {
     try {
@@ -45,6 +55,51 @@ export function TransferPanel({ notify }: { notify: Notify }) {
     const timer = setInterval(() => void load(), 1000);
     return () => clearInterval(timer);
   }, [load]);
+  useEffect(() => {
+    if (!menu) return;
+    menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    function outside(e: PointerEvent) {
+      if (!menuRef.current?.contains(e.target as Node)) setMenu(null);
+    }
+    function dismiss() { setMenu(null); }
+    function keyboard(e: KeyboardEvent) {
+      if (e.key === "Escape") dismiss();
+    }
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", keyboard);
+    window.addEventListener("resize", dismiss);
+    window.addEventListener("blur", dismiss);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", keyboard);
+      window.removeEventListener("resize", dismiss);
+      window.removeEventListener("blur", dismiss);
+    };
+  }, [menu]);
+  async function openLocal(task: Transfer, action: "open" | "reveal") {
+    setMenu(null);
+    if (!isCompletedDownload(task) || pending.current.has(task.id)) return;
+    pending.current.add(task.id);
+    setOpening((old) => new Set(old).add(task.id));
+    try {
+      // The native side resolves the completed task ID to its validated local path.
+      await api("transfer_open_local", { id: task.id, action });
+    } catch (e) {
+      notify(errorText(e), "error");
+    } finally {
+      pending.current.delete(task.id);
+      setOpening((old) => { const next = new Set(old); next.delete(task.id); return next; });
+    }
+  }
+  async function copyLocalPath(task: Transfer) {
+    setMenu(null);
+    try {
+      await navigator.clipboard.writeText(task.localPath);
+      notify(tr("路径已复制。"), "success");
+    } catch (e) {
+      notify(errorText(e), "error");
+    }
+  }
   async function control(id: string, action: string) {
     try {
       await api("transfer_control", { id, action });
@@ -81,7 +136,7 @@ export function TransferPanel({ notify }: { notify: Notify }) {
       </div>
       {tasks.length ? (
         <div className="scroll-area">
-          <table className="transfer-table">
+          <table className="transfer-table transfer-table-local-actions">
             <thead>
               <tr>
                 <th>{tr("文件 / 方向")}</th>
@@ -95,7 +150,12 @@ export function TransferPanel({ notify }: { notify: Notify }) {
               {tasks.map((t) => {
                 const state = t.status.toLowerCase();
                 return (
-                  <tr key={t.id}>
+                  <tr key={t.id} data-transfer-id={t.id}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setMenu({ id: t.id, x: e.clientX, y: e.clientY });
+                    }}>
                     <td>
                       <div className="transfer-name">
                         {t.direction === "upload" ? (
@@ -105,10 +165,7 @@ export function TransferPanel({ notify }: { notify: Notify }) {
                         )}
                         <div>
                           <strong>
-                            {(t.direction === "upload"
-                              ? t.localPath
-                              : t.remotePath
-                            )
+                            {t.localPath
                               .split(/[\\/]/)
                               .pop()}
                           </strong>
@@ -141,6 +198,12 @@ export function TransferPanel({ notify }: { notify: Notify }) {
                     </td>
                     <td>
                       <div className="row-actions">
+                        {isCompletedDownload(t) && <>
+                          <IconButton title={tr("在文件夹中显示")} disabled={opening.has(t.id)}
+                            onClick={() => void openLocal(t, "reveal")}><FolderOpen size={15} /></IconButton>
+                          <IconButton title={tr("打开已下载文件")} disabled={opening.has(t.id)}
+                            onClick={() => void openLocal(t, "open")}><ExternalLink size={14} /></IconButton>
+                        </>}
                         {state === "running" && (
                           <IconButton
                             title={tr("暂停")}
@@ -187,6 +250,29 @@ export function TransferPanel({ notify }: { notify: Notify }) {
           text={tr("在文件面板上传或下载文件，进度会显示在这里。")}
         />
       )}
+      {menu && selected && createPortal(
+        <div className="file-context-menu transfer-context-menu" role="menu"
+          aria-label={tr("传输记录菜单")} ref={menuRef}
+          style={{
+            left: Math.max(6, Math.min(menu.x, window.innerWidth - 246)),
+            top: Math.max(6, Math.min(menu.y, window.innerHeight - 112)),
+          }}
+          onContextMenu={(e) => e.preventDefault()}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+            const buttons = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") || []);
+            if (!buttons.length) return;
+            e.preventDefault();
+            const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+            buttons[(index + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length]?.focus();
+          }}>
+          <button role="menuitem" disabled={!isCompletedDownload(selected) || opening.has(selected.id)}
+            onClick={() => void openLocal(selected, "open")}><span><ExternalLink size={14} />{tr("打开已下载文件")}</span></button>
+          <button role="menuitem" disabled={!isCompletedDownload(selected) || opening.has(selected.id)}
+            onClick={() => void openLocal(selected, "reveal")}><span><FolderOpen size={14} />{tr("在文件夹中显示")}</span></button>
+          <div className="menu-divider" role="separator" />
+          <button role="menuitem" onClick={() => void copyLocalPath(selected)}><span><Copy size={14} />{tr("复制本地路径")}</span></button>
+        </div>, document.body)}
     </div>
   );
 }

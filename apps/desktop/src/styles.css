@@ -2962,3 +2962,34 @@ select:not([multiple]) {
   color: var(--muted); border-top: 1px solid var(--border-soft);
 }
 .detached-monitor-error { color: var(--red); }
+
+/* An ordinary positioned block inside each table header is more reliable than
+   using the table-cell itself as the handle's containing block in WebKit. */
+.file-explorer .resizable-file-table { border-collapse: separate; border-spacing: 0; }
+.file-explorer .resizable-file-table .resizable-file-heading { padding: 0; }
+.file-heading-content {
+  position: relative; display: flex; align-items: center;
+  box-sizing: border-box; min-height: 28px; padding: 5px 15px 5px 10px;
+}
+.file-heading-content > span {
+  display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.file-heading-content > .column-resize-handle {
+  position: absolute; top: 0; bottom: 0; right: 0; width: 12px;
+  z-index: 3; cursor: col-resize; border: 0;
+}
+.file-heading-content > .column-resize-handle::after {
+  content: ""; position: absolute; top: 5px; bottom: 5px; right: 0;
+  width: 1px; background: var(--border);
+}
+.file-heading-content > .column-resize-handle:hover,
+.file-heading-content > .column-resize-handle:focus-visible,
+.column-resize-handle.resizing, .resize-handle.resizing { background: var(--accent-strong); }
+body.shell-resizing, body.shell-resizing * {
+  cursor: col-resize !important; user-select: none !important; -webkit-user-select: none !important;
+}
+
+.transfer-context-menu button > span { display: flex; align-items: center; gap: 8px; }
+.transfer-table-local-actions { min-width: 580px; }
+.transfer-table-local-actions th:last-child { width: 74px; }
+.transfer-table-local-actions .row-actions { flex-wrap: nowrap; }

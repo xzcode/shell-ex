@@ -29,6 +29,7 @@ use std::{
 use tauri::{ipc::Channel, Manager, State};
 use zeroize::Zeroizing;
 
+mod local_download;
 mod monitor_window;
 
 struct AppState {
@@ -1125,7 +1126,7 @@ pub fn run() {
         );
         builder = builder.plugin(tauri_plugin_updater::Builder::new().pubkey(key).build());
     }
-    let handler = tauri::generate_handler![
+    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
         hosts_list,
         host_save,
         host_delete,
@@ -1162,6 +1163,7 @@ pub fn run() {
         transfer_start_directory,
         transfers_list,
         transfer_control,
+        local_download::transfer_open_local,
         monitor_snapshot,
         monitor_window::monitor_window_open,
         monitor_window::monitor_window_update,

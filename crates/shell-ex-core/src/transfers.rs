@@ -387,6 +387,20 @@ impl TransferManager {
         }
         records
     }
+    /// Only a verified, completed download may be opened by the desktop UI.
+    /// Never accept a path supplied by the frontend for this operation.
+    pub async fn completed_download_path(&self, id: &str) -> Result<std::path::PathBuf> {
+        let task = self
+            .inner
+            .tasks
+            .lock()
+            .await
+            .get(id)
+            .cloned()
+            .ok_or_else(|| AppError::new("TRANSFER_NOT_FOUND", "Transfer no longer exists"))?;
+        let record = task.record.lock().await.clone();
+        completed_download_file(&record).await
+    }
     pub async fn control(&self, id: &str, action: &str) -> Result<()> {
         let task = self
             .inner
@@ -1091,6 +1105,41 @@ fn local_signature(meta: &std::fs::Metadata) -> String {
         )
     }
 }
+async fn completed_download_file(record: &Transfer) -> Result<std::path::PathBuf> {
+    if record.direction != "download" || record.status != "completed" {
+        return Err(AppError::new(
+            "DOWNLOAD_NOT_COMPLETE",
+            "仅可打开已完成的下载文件",
+        ));
+    }
+    let path = Path::new(&record.local_path);
+    let parent = path
+        .parent()
+        .filter(|_| path.is_absolute() && path.file_name().is_some())
+        .ok_or_else(|| AppError::new("INVALID_LOCAL_PATH", "Invalid local download path"))?;
+    // Transfers store a canonical parent. Refuse paths that have subsequently
+    // been redirected by a symbolic link or a Windows reparse point.
+    let actual = fs::canonicalize(parent)
+        .await
+        .map_err(|_| AppError::new("DOWNLOAD_MISSING", "下载的文件或所在文件夹已不存在"))?;
+    if actual != parent {
+        return Err(AppError::new(
+            "DOWNLOAD_PATH_CHANGED",
+            "下载文件的本地路径已发生变化",
+        ));
+    }
+    let meta = local_metadata(&record.local_path)
+        .await?
+        .ok_or_else(|| AppError::new("DOWNLOAD_MISSING", "下载的文件或所在文件夹已不存在"))?;
+    if !meta.is_file() || local_is_link(&meta) {
+        return Err(AppError::new(
+            "DOWNLOAD_PATH_CHANGED",
+            "下载文件的本地路径已发生变化",
+        ));
+    }
+    Ok(path.to_path_buf())
+}
+
 async fn local_metadata(path: &str) -> Result<Option<std::fs::Metadata>> {
     match fs::symlink_metadata(path).await {
         Ok(m) => Ok(Some(m)),
@@ -1167,6 +1216,42 @@ mod tests {
         assert_ne!(a, b);
         assert!(hash_prefix(&mut &b"abc"[..], 4, &receiver).await.is_err());
     }
+    #[tokio::test]
+    async fn only_completed_regular_downloads_can_be_opened() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(temp.path()).await.unwrap();
+        let path = root.join("file with spaces.txt");
+        fs::write(&path, b"fixture").await.unwrap();
+        let mut record = Transfer {
+            id: "fixture".into(),
+            session_id: "fixture".into(),
+            direction: "download".into(),
+            local_path: path.to_str().unwrap().into(),
+            remote_path: "/tmp/fixture".into(),
+            status: "completed".into(),
+            transferred: 7,
+            total: 7,
+            speed: 0.0,
+            error: None,
+        };
+        assert_eq!(completed_download_file(&record).await.unwrap(), path);
+        record.status = "running".into();
+        assert!(completed_download_file(&record).await.is_err());
+        record.status = "completed".into();
+        record.direction = "upload".into();
+        assert!(completed_download_file(&record).await.is_err());
+        record.direction = "download".into();
+        fs::remove_file(&path).await.unwrap();
+        assert!(completed_download_file(&record).await.is_err());
+        #[cfg(unix)]
+        {
+            let target = root.join("target");
+            fs::write(&target, b"other").await.unwrap();
+            std::os::unix::fs::symlink(target, &path).unwrap();
+            assert!(completed_download_file(&record).await.is_err());
+        }
+    }
+
     #[tokio::test]
     async fn local_download_conflict_never_replaces_a_racing_file() {
         let temp = tempfile::tempdir().unwrap();
