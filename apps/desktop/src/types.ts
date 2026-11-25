@@ -1,3 +1,4 @@
+export type CredentialStore = "builtin" | "auto" | "local" | "session";
 export type Host = {
   id: string;
   name: string;
@@ -6,8 +7,8 @@ export type Host = {
   username: string;
   group: string;
   authMethod: "password" | "key" | "agent" | "interactive";
-  /** Missing from older saved hosts means system Keychain. */
-  credentialStore?: "builtin" | "auto" | "local" | "system" | "session";
+  /** Accept old configuration on input; normalize before use. */
+  credentialStore?: CredentialStore | "system";
   privateKeyPath: string | null;
   proxy: { kind: "socks5" | "http"; host: string; port: number } | null;
   jumpHostId: string | null;
@@ -18,6 +19,13 @@ export type Host = {
   color: string;
   notes: string;
 };
+export function credentialStoreForHost(host?: Host | null): CredentialStore {
+  const mode = host?.credentialStore;
+  return !mode || mode === "system" ? "builtin" : mode;
+}
+export function normalizeHost(host: Host): Host {
+  return { ...host, credentialStore: credentialStoreForHost(host) };
+}
 export type SecretInput = {
   password?: string | null;
   passphrase?: string | null;

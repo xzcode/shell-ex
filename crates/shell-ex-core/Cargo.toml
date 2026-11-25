@@ -21,7 +21,6 @@ hex = "0.4"
 libc = "0.2"
 zeroize = { version = "1", features = ["derive"] }
 rusqlite = { version = "0.38", features = ["bundled"] }
-keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust", "vendored"] }
 aes-gcm = "0.10"
 argon2 = "0.5"
 rand = "0.8"

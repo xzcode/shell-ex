@@ -50,9 +50,9 @@ import type {
   TerminalEvent,
   Workspace,
 } from "./types";
-import { defaultSettings, defaultWorkspace } from "./types";
+import { defaultSettings, defaultWorkspace, credentialStoreForHost } from "./types";
 import { api, confirmAction, errorText, native } from "./api";
-import { Busy, ErrorBox, Field, IconButton, Modal } from "./ui";
+import { Busy, ErrorBox, Field, IconButton, Modal, Toggle } from "./ui";
 import { HostDialog, TrustDialog } from "./HostDialog";
 import {
   TerminalView,
@@ -75,9 +75,10 @@ type Toast = {
   message: string;
   kind: "success" | "error" | "info";
 };
+type PromptAnswer = { secret: SecretInput; remember: boolean };
 type SecretPrompt = {
   host: Host;
-  resolve: (secret: SecretInput | null) => void;
+  resolve: (answer: PromptAnswer | null) => void;
 };
 const labels: Record<string, string> = {
   connected: "已连接",
@@ -264,6 +265,7 @@ export default function App() {
     signal?: AbortSignal,
   ): Promise<boolean> {
     let secret: SecretInput | null = null;
+    let rememberSecret = false;
     let stopListening: (() => void) | undefined;
     // A reconnect belongs to its source tab, including a native call already in flight.
     const cancelled = () => automatic && !!signal?.aborted;
@@ -314,7 +316,7 @@ export default function App() {
         try {
           saved = await api<boolean>("host_secret_status", { id: host.id });
         } catch (e) {
-          const mode = host.credentialStore || "system";
+          const mode = credentialStoreForHost(host);
           if (mode === "local") {
             const status = await api<VaultStatus>("vault_status");
             if (status.initialized && !status.unlocked) {
@@ -335,10 +337,12 @@ export default function App() {
         if (cancelled()) return false;
         if (!saved) {
           if (automatic) throw new Error(tr("没有已保存的凭据，请手动重新连接。"));
-          secret = await new Promise<SecretInput | null>((resolve) =>
+          const answer = await new Promise<PromptAnswer | null>((resolve) =>
             setSecretPrompt({ host, resolve }),
           );
-          if (!secret) return false;
+          if (!answer) return false;
+          secret = answer.secret;
+          rememberSecret = answer.remember;
         }
       }
       if (cancelled()) return false;
@@ -368,9 +372,13 @@ export default function App() {
         }
         onEvent(event);
       };
-      const id = await api<string>("ssh_connect", {
+      const { sessionId: id, credentialSaveFailed } = await api<{
+        sessionId: string;
+        credentialSaveFailed: boolean;
+      }>("ssh_connect", {
         hostId: host.id,
         secret,
+        rememberSecret,
         onEvent: onEventChannel,
       });
       if (secret) {
@@ -426,6 +434,8 @@ export default function App() {
       restoreRef.current = [];
       reconnectAttempts.current.delete(host.id);
       notify(tr("已连接 {0}。", host.name), "success");
+      if (credentialSaveFailed)
+        notify(tr("连接成功，但密码未能保存。请编辑连接重新保存。"), "error");
       return true;
     } catch (e) {
       if (!cancelled()) notify(errorText(e), "error");
@@ -843,7 +853,7 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark">›_</span>
           <strong>Shell EX</strong>
-          <span className="version-tag">0.4.0</span>
+          <span className="version-tag">0.4.1</span>
         </div>
         <div className="header-actions">
           <IconButton
@@ -1511,9 +1521,20 @@ function CredentialPrompt({
   onDone,
 }: {
   prompt: SecretPrompt;
-  onDone: (secret: SecretInput | null) => void;
+  onDone: (answer: PromptAnswer | null) => void;
 }) {
   const [value, setValue] = useState("");
+  const canRemember = credentialStoreForHost(prompt.host) === "builtin";
+  const [remember, setRemember] = useState(canRemember);
+  function submit() {
+    onDone({
+      secret: prompt.host.authMethod === "key"
+        ? { passphrase: value || null }
+        : { password: value },
+      remember: canRemember && remember && value.length > 0,
+    });
+    setValue("");
+  }
   return (
     <Modal
       title={prompt.host.authMethod === "key" ? tr("私钥口令") : tr("登录凭据")}
@@ -1533,14 +1554,7 @@ function CredentialPrompt({
           >{tr("取消")}</button>
           <button
             className="button primary"
-            onClick={() => {
-              onDone(
-                prompt.host.authMethod === "key"
-                  ? { passphrase: value || null }
-                  : { password: value },
-              );
-              setValue("");
-            }}
+            onClick={submit}
           >{tr("连接")}</button>
         </>
       }
@@ -1551,7 +1565,7 @@ function CredentialPrompt({
             ? tr("私钥口令（未加密私钥可留空）")
             : tr("密码")
         }
-        hint={tr("只用于本次连接，不会保存。需要自动登录可在基本信息中选择应用内加密密码库。")}
+        hint={canRemember ? undefined : tr("只用于本次连接，不会保存。需要自动登录可在基本信息中选择应用内加密密码库。")}
       >
         <input
           autoFocus
@@ -1560,17 +1574,16 @@ function CredentialPrompt({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              onDone(
-                prompt.host.authMethod === "key"
-                  ? { passphrase: value || null }
-                  : { password: value },
-              );
-              setValue("");
-            }
+            if (e.key === "Enter") submit();
           }}
         />
       </Field>
+      {canRemember && <Toggle
+        checked={remember}
+        onChange={setRemember}
+        label={tr("连接成功后本地加密保存")}
+        description={tr("仅保存在 Shell EX 应用目录，不访问系统钥匙串。")}
+      />}
     </Modal>
   );
 }

@@ -49,16 +49,23 @@ def source_guard():
     assert subprocess.check_output(["git", "rev-parse", "HEAD"], text=True, cwd=ROOT).strip() == SHA
 
 
+def checked_release(r, tag):
+    assert r["tag_name"] == tag
+    assert r["target_commitish"] == SHA, "Version already belongs to another source commit"
+    if not r["draft"]:
+        assert api("git/ref/tags/" + tag)["object"]["sha"] == SHA
+    return r
+
+
 def release(tag):
-    rows = [r for r in api("releases?per_page=100") if r["tag_name"] == tag]
+    release_id = os.environ.get("SHELL_EX_RELEASE_ID", "")
+    if release_id:
+        assert release_id.isdecimal()
+        return checked_release(api("releases/" + release_id), tag)
+    pages = json.loads(gh("api", "--paginate", "--slurp", f"repos/{REPO}/releases?per_page=100"))
+    rows = [r for page in pages for r in page if r["tag_name"] == tag]
     assert len(rows) <= 1
-    if rows:
-        r = rows[0]
-        assert r["target_commitish"] == SHA, "Version already belongs to another source commit"
-        if not r["draft"]:
-            assert api("git/ref/tags/" + tag)["object"]["sha"] == SHA
-        return r
-    return None
+    return checked_release(rows[0], tag) if rows else None
 
 
 def prepare(tag):
@@ -67,17 +74,22 @@ def prepare(tag):
     r = release(tag)
     if r is None:
         notes = ROOT / "docs/releases" / (tag + ".md")
-        args = ["release", "create", tag, "--repo", REPO, "--target", SHA,
-                "--draft", "--title", "Shell EX " + tag]
-        if notes.is_file():
-            args += ["--notes-file", str(notes)]
-        else:
-            args += ["--generate-notes"]
-        gh(*args)
-        r = release(tag)
-    assert r and r["draft"], "Refusing to modify an existing published release"
+        body = notes.read_text(encoding="utf-8") if notes.is_file() else "Shell EX " + tag
+        # Keep the ID from the authenticated creation response. A fresh draft
+        # may not appear immediately in the tag-based or list API.
+        r = json.loads(subprocess.check_output(
+            ["gh", "api", "--method", "POST", f"repos/{REPO}/releases", "--input", "-"],
+            input=json.dumps({
+                "tag_name": tag, "target_commitish": SHA,
+                "name": "Shell EX " + tag, "body": body,
+                "draft": True, "prerelease": False,
+            }), text=True, cwd=ROOT
+        ))
+        r = checked_release(r, tag)
+    assert r["draft"], "Refusing to modify an existing published release"
+    with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+        f.write(f"release_id={r['id']}\n")
     print("Release draft:", r["html_url"], "source:", SHA)
-
 
 def asset_name(platform, v):
     return "Shell-EX_" + v + PLATFORMS[platform][2]
@@ -120,7 +132,7 @@ def upload(tag):
             missing.append(str(p))
     if missing:
         gh("release", "upload", tag, "--repo", REPO, *missing)
-    current = {a["name"]: a for a in release(tag)["assets"]}
+    current = {a["name"]: a for a in api(f"releases/{r['id']}")["assets"]}
     for p in files:
         a = current[p.name]
         assert a["state"] == "uploaded" and a["size"] == p.stat().st_size

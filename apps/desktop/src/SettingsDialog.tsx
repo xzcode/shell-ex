@@ -74,7 +74,7 @@ export function SettingsDialog({
         .catch((e) =>
           setUpdate({
             configured: false,
-            version: "0.4.0",
+            version: "0.4.1",
             reason: errorText(e),
           }),
         );
@@ -164,7 +164,7 @@ export function SettingsDialog({
       footer={
         <>
           <span className="footer-note">
-            Shell EX · {update?.version || "0.4.0"}
+            Shell EX · {update?.version || "0.4.1"}
           </span>
           <button className="button secondary" onClick={onClose}>{tr("取消")}</button>
           <button
@@ -332,7 +332,7 @@ export function SettingsDialog({
               <h3>{tr("安全与凭据")}</h3>
               <div className="info-note">
                 <ShieldCheck size={20} />
-                <p>{tr("新连接默认使用 Shell EX 内置 AES-256-GCM 加密保存 SSH 密码，无需设置主密码或生成密钥文件。主机配置不含明文密码；已有连接仍按原有方式读取。")}</p>
+                <p>{tr("SSH 密码默认使用 Shell EX 内置 AES-256-GCM 加密保存在本机，不访问系统钥匙串。旧系统凭据连接保留配置，首次连接时可重新输入并保存密码；旧应用内密码库继续兼容。")}</p>
               </div>
               <h4>{tr("默认：内置 AES 加密保存")}</h4>
               <p className="section-description">{tr("默认保存方式不需要额外操作。程序内置统一加密密钥，每条记录使用随机 nonce；具备程序副本和加密数据库的人仍可能还原密码，请保护电脑登录账户与应用数据。")}</p>

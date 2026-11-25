@@ -11,7 +11,7 @@ import {
   Copy,
 } from "lucide-react";
 import type { Host, HostKeyInfo, SecretInput, Notify } from "./types";
-import { newHost } from "./types";
+import { newHost, normalizeHost, credentialStoreForHost, type CredentialStore } from "./types";
 import { api, chooseFile, errorText, native } from "./api";
 import { Modal, Field, Toggle, Busy, ErrorBox } from "./ui";
 export function HostDialog({
@@ -28,7 +28,7 @@ export function HostDialog({
   notify: Notify;
 }) {
   const [form, setForm] = useState<Host>(() =>
-    host ? { ...host } : newHost(),
+    host ? normalizeHost(host) : newHost(),
   );
   const [tab, setTab] = useState("basic");
   const [password, setPassword] = useState("");
@@ -53,11 +53,11 @@ export function HostDialog({
       );
       return;
     }
-    const mode = form.credentialStore || (host ? "system" : "builtin");
+    const mode = credentialStoreForHost(form);
     const persistentAuth = form.authMethod === "password" || form.authMethod === "key";
     const suppliedCredential = form.authMethod === "password" ? password : form.authMethod === "key" ? passphrase : "";
     const requiresVault = mode === "local" && native && persistentAuth &&
-      (Boolean(suppliedCredential) || (host && (host.credentialStore || "system") !== "local"));
+      (Boolean(suppliedCredential) || (host && credentialStoreForHost(host) !== "local"));
     if (requiresVault && !vaultReady) {
       try {
         const status = await api<VaultStatus>("vault_status");
@@ -91,9 +91,6 @@ export function HostDialog({
         setProbe(result);
         notify(tr("SSH 握手完成，连接配置已保存；尚未进行身份认证。"), "success");
       } else {
-        if (host && (host.credentialStore || "system") === "system" && ["builtin", "auto", "local"].includes(mode)) {
-          notify(tr("已切换到应用内加密库。如旧系统凭据库无法访问，原副本可能仍保留，请在系统 Keychain 中检查。"), "info");
-        }
         onSaved(saved);
       }
     } catch (e) {
@@ -248,7 +245,7 @@ export function HostDialog({
               <option value="interactive">{tr("交互式认证 / MFA")}</option>
             </select>
           </Field>
-          {form.authMethod === "password" && (form.credentialStore || (host ? "system" : "builtin")) !== "session" && (
+          {form.authMethod === "password" && (credentialStoreForHost(form)) !== "session" && (
             <Field
               label={tr("登录密码")}
               full
@@ -295,7 +292,7 @@ export function HostDialog({
                   </button>
                 </div>
               </Field>
-              {(form.credentialStore || (host ? "system" : "builtin")) !== "session" && <Field label={tr("私钥口令（如果有）")} full>
+              {(credentialStoreForHost(form)) !== "session" && <Field label={tr("私钥口令（如果有）")} full>
                 <input
                   type="password"
                   autoComplete="new-password"
@@ -320,10 +317,9 @@ export function HostDialog({
           {(form.authMethod === "password" || form.authMethod === "key") && (
             <div className="full credential-mode">
               <Field label={tr("密码保存位置")} full>
-                <select value={form.credentialStore || (host ? "system" : "builtin")}
-                  onChange={(e) => set("credentialStore", e.target.value as "builtin" | "auto" | "local" | "system" | "session")}>
+                <select value={credentialStoreForHost(form)}
+                  onChange={(e) => set("credentialStore", e.target.value as CredentialStore)}>
                   <option value="builtin">{tr("本地加密保存（默认）")}</option>
-                  <option value="system">{tr("系统凭据库（Keychain 等）")}</option>
                   <option value="session">{tr("不保存密码（每次输入）")}</option>
                   {(host?.credentialStore === "auto" || form.credentialStore === "auto") && (
                     <option value="auto">{tr("旧版自动加密库（兼容）")}</option>
@@ -336,9 +332,7 @@ export function HostDialog({
               <p className="credential-mode-hint">
                 {form.credentialStore === "session"
                   ? tr("只保存服务器配置，下次连接时再输入 SSH 密码。")
-                  : form.credentialStore === "system" || (!form.credentialStore && host)
-                    ? tr("使用原系统凭据库，已有连接不会自动迁移。")
-                    : form.credentialStore === "auto"
+                  : form.credentialStore === "auto"
                       ? tr("保留旧版自动加密的凭据，原来的本机密钥文件仍用于解密旧记录。")
                       : form.credentialStore === "local"
                         ? tr("兼容以前设置过主密码的加密库，可以重新输入服务器密码切换到默认模式。")

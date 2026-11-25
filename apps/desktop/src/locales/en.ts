@@ -665,5 +665,11 @@ export const en: Readonly<Record<string, string>> = {
   "同一层连接请选择代理或跳板机之一；可为跳板机单独配置代理": "Choose either a proxy or a jump host for each connection level. A jump host can have its own proxy.",
   "设置值超出允许范围": "A setting is outside the permitted range.",
   "工作区布局格式或范围无效": "Invalid workspace layout format or range.",
-  "命令片段格式无效": "Invalid snippet format."
+  "命令片段格式无效": "Invalid snippet format.",
+  "请选择应用内加密库或仅本次使用": "Choose an in-app encrypted vault or session-only storage.",
+  "SSH 密码默认使用 Shell EX 内置 AES-256-GCM 加密保存在本机，不访问系统钥匙串。旧系统凭据连接保留配置，首次连接时可重新输入并保存密码；旧应用内密码库继续兼容。": "SSH passwords use Shell EX built-in AES-256-GCM local encryption by default, without accessing the system keychain. Legacy system-backed connections keep their settings; enter and save the password when reconnecting. Legacy in-app vaults remain supported.",
+  "连接成功，但密码未能保存。请编辑连接重新保存。": "Connected, but the credential could not be saved. Edit the connection to save it again.",
+  "连接成功后本地加密保存": "Save locally with encryption after connecting",
+  "仅保存在 Shell EX 应用目录，不访问系统钥匙串。": "Stored only in the Shell EX application directory, without accessing the system keychain.",
+  "连接配置已改变，请编辑连接重新保存密码。": "Connection settings changed. Edit the connection to save the password again."
 };

@@ -344,7 +344,7 @@ async fn host_save(
         } else if remember_secret && has_secret {
             secret
         } else if changing {
-            // Migration is explicit; copy old Keychain/local secret before switching.
+            // Migration is explicit; copy an existing local secret before switching.
             match old.as_ref() {
                 Some(previous_host) => vault.get_for_host(previous_host)?,
                 None => None,
@@ -381,16 +381,6 @@ async fn host_save(
         if changing {
             if let Some(previous_host) = old.as_ref() {
                 if let Err(e) = vault.delete_for_host(previous_host) {
-                    // An unavailable legacy Keychain must not prevent a user from
-                    // switching to a local vault when they explicitly supplied new
-                    // credentials. Keep the old Keychain record untouched; the UI
-                    // warns that its old copy might need manual cleanup.
-                    if previous_host.credential_store == "system"
-                        && ["local", "auto", "builtin"].contains(&host.credential_store.as_str())
-                        && has_secret
-                    {
-                        return Ok(saved);
-                    }
                     let host_restored = store.save_host(previous_host.clone());
                     let secret_restored = match previous_target {
                         Some(Some(s)) => vault.set_for_host(&host, &s),
@@ -545,13 +535,20 @@ fn ssh_trust(
     }
     state.store.trust(&host, &algorithm, &fingerprint, replace)
 }
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConnectResult {
+    session_id: String,
+    credential_save_failed: bool,
+}
 #[tauri::command]
 async fn ssh_connect(
     state: State<'_, AppState>,
     host_id: String,
     secret: Option<SecretInput>,
+    remember_secret: Option<bool>,
     on_event: Channel<TerminalEvent>,
-) -> Result<String> {
+) -> Result<ConnectResult> {
     let host = state.store.host(&host_id)?;
     // Re-probe immediately; the authenticated transport independently pins this same fingerprint.
     let key = state.probe_host(&host).await?;
@@ -579,8 +576,17 @@ async fn ssh_connect(
     } else {
         SecretInput::default()
     };
+    let remember = supplied
+        && remember_secret.unwrap_or(false)
+        && host.credential_store == "builtin"
+        && match host.auth_method.as_str() {
+            "password" => secret.password.as_ref().is_some_and(|v| !v.is_empty()),
+            "key" => secret.passphrase.as_ref().is_some_and(|v| !v.is_empty()),
+            _ => false,
+        };
+    let remembered = remember.then(|| secret.clone());
     let event_sink = sink(on_event, state.session_owner(false));
-    match state.jump_session(&host).await? {
+    let session_id = match state.jump_session(&host).await? {
         Some(jump) => {
             state
                 .ssh
@@ -593,7 +599,46 @@ async fn ssh_connect(
                 .connect(&host, secret, key.fingerprint, event_sink)
                 .await
         }
-    }
+    }?;
+    // A failed vault write must not hide or leak an already authenticated session.
+    // Recheck the host under the mutation lock before persisting the secret.
+    let credential_save_failed = if let Some(secret) = remembered {
+        let vault = state.vault.clone();
+        let store = state.store.clone();
+        let mutation = state.mutation.clone();
+        !matches!(
+            tokio::task::spawn_blocking(move || {
+                let _guard = mutation.lock().map_err(AppError::internal)?;
+                let current = store.host(&host.id)?;
+                if current.credential_store != "builtin"
+                    || current.address != host.address
+                    || current.port != host.port
+                    || current.username != host.username
+                    || current.auth_method != host.auth_method
+                    || current.private_key_path != host.private_key_path
+                    || current.jump_host_id != host.jump_host_id
+                {
+                    return Err(AppError::new(
+                        "HOST_CHANGED",
+                        "连接配置已改变，请编辑连接重新保存密码。",
+                    ));
+                }
+                // Never overwrite a credential saved by another action during authentication.
+                if vault.get_for_host(&current)?.is_none() {
+                    vault.set_for_host(&current, &secret)?;
+                }
+                Ok(())
+            })
+            .await,
+            Ok(Ok(()))
+        )
+    } else {
+        false
+    };
+    Ok(ConnectResult {
+        session_id,
+        credential_save_failed,
+    })
 }
 #[tauri::command]
 async fn ssh_auth_respond(

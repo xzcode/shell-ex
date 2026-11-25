@@ -2,7 +2,7 @@ import { tr } from "./i18n";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import type { Host, Snippet } from "./types";
-import { defaultSettings, defaultWorkspace } from "./types";
+import { defaultSettings, defaultWorkspace, normalizeHost } from "./types";
 export const native = isTauri();
 export function errorText(error: unknown): string {
   if (typeof error === "string") return tr(error);
@@ -32,10 +32,10 @@ export async function api<T>(
   let result: unknown;
   switch (command) {
     case "hosts_list":
-      result = stored("hosts", []);
+      result = stored<Host[]>("hosts", []).map(normalizeHost);
       break;
     case "host_save": {
-      const host = args.host as Host;
+      const host = normalizeHost(args.host as Host);
       const hosts = stored<Host[]>("hosts", []);
       put("hosts", [...hosts.filter((h) => h.id !== host.id), host]);
       result = host;

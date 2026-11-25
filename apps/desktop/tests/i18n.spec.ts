@@ -36,4 +36,28 @@ test.describe("language preferences", () => {
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expect(page.locator(".host-item").filter({ hasText: "测试服务器" })).toBeVisible();
   });
+
+  test("legacy system credential settings show only local storage", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("shell-ex-preview-hosts", JSON.stringify([{
+        id: "bc6f7e3e-e59b-4c7f-b485-1f3782ed3240", name: "Legacy host",
+        address: "192.0.2.45", port: 22, username: "ubuntu", group: "Legacy",
+        authMethod: "password", credentialStore: "system", privateKeyPath: null,
+        proxy: null, jumpHostId: null, startupDirectory: null,
+        keepAliveSeconds: 30, connectTimeoutSeconds: 15, favorite: false,
+        color: "#69a9f8", notes: ""
+      }]));
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "More actions for Legacy host" }).click();
+    await page.locator(".context-menu").getByRole("button", { name: "Edit connection", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Edit connection" });
+    const storage = dialog.getByLabel("Password storage");
+    await expect(storage).toHaveValue("builtin");
+    await expect(storage.locator('option[value="system"]')).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Save connection" }).click();
+    const hosts = await page.evaluate(() => JSON.parse(localStorage.getItem("shell-ex-preview-hosts")!));
+    expect(hosts[0].credentialStore).toBe("builtin");
+    expect(hosts[0].id).toBe("bc6f7e3e-e59b-4c7f-b485-1f3782ed3240");
+  });
 });

@@ -16,7 +16,7 @@ flowchart TD
   Files --> Sessions
   Ops --> Sessions
   Data --> DB["SQLite"]
-  Data --> Vault["系统凭据库"]
+  Data --> Vault["应用内加密凭据库"]
   Sessions --> Remote["SSH 服务器"]
 ```
 
@@ -64,7 +64,7 @@ Docker 仅执行固定动作模板与校验后的十六进制容器标识。操�
 
 ## 配置与凭据
 
-SQLite WAL 保存 Host/Settings/Workspace/Snippet 与应用自己的主机信任记录。数据库只保存私钥路径，没有密码字段。macOS Keychain、Windows Credential Store、Linux Secret Service 保存敏感凭据。
+SQLite WAL 保存 Host/Settings/Workspace/Snippet 与应用自己的主机信任记录。数据库只保存私钥路径，没有密码字段。SSH 敏感凭据默认使用应用内 AES-256-GCM 加密库；旧版应用内密码库仍兼容，不再依赖操作系统凭据库。
 
 跨配置/凭据的变更使用共享变更锁串行化。备份导入在写入前验证所有字段、跳板拓扑、工作区范围并读取凭据快照。数据库使用事务；凭据库无法与 SQLite 做单一事务，失败时恢复旧项，恢复失败有独立错误码。界面不能把此状态显示为成功。
 

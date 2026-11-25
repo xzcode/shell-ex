@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,8 +11,11 @@ pub struct Host {
     pub username: String,
     pub group: String,
     pub auth_method: String,
-    /// Missing in v0.1/v0.2 records: preserve their system Keychain credentials.
-    #[serde(default = "default_credential_store")]
+    /// Legacy system-backed records are read as builtin without contacting the OS vault.
+    #[serde(
+        default = "default_credential_store",
+        deserialize_with = "deserialize_credential_store"
+    )]
     pub credential_store: String,
     pub private_key_path: Option<String>,
     pub proxy: Option<ProxyConfig>,
@@ -25,7 +28,17 @@ pub struct Host {
     pub notes: String,
 }
 pub fn default_credential_store() -> String {
-    "system".into()
+    "builtin".into()
+}
+fn deserialize_credential_store<'de, D: Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<String, D::Error> {
+    let mode = String::deserialize(d)?;
+    Ok(if mode == "system" {
+        default_credential_store()
+    } else {
+        mode
+    })
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -152,7 +165,7 @@ impl Default for Workspace {
 mod credential_store_compat_tests {
     use super::*;
     #[test]
-    fn legacy_saved_hosts_remain_on_system_credentials_without_plaintext() {
+    fn legacy_saved_hosts_use_builtin_credentials_without_plaintext() {
         let raw = serde_json::json!({
             "id": uuid::Uuid::new_v4().to_string(),
             "name": "Legacy", "address": "example.org", "port": 22,
@@ -162,11 +175,24 @@ mod credential_store_compat_tests {
             "keepAliveSeconds": 30, "connectTimeoutSeconds": 15,
             "favorite": false, "color": "#aaa", "notes": "existing connection"
         });
-        let old: Host = serde_json::from_value(raw).unwrap();
-        assert_eq!(old.credential_store, "system");
+        let old: Host = serde_json::from_value(raw.clone()).unwrap();
+        assert_eq!(old.credential_store, "builtin");
+        for (input, expected) in [
+            ("system", "builtin"),
+            ("builtin", "builtin"),
+            ("auto", "auto"),
+            ("local", "local"),
+            ("session", "session"),
+        ] {
+            let mut config = raw.clone();
+            config["credentialStore"] = serde_json::json!(input);
+            let host: Host = serde_json::from_value(config).unwrap();
+            assert_eq!(host.credential_store, expected);
+            assert_eq!(host.id, old.id);
+        }
         let serialized = serde_json::to_string(&old).unwrap();
         let json: serde_json::Value = serde_json::from_str(&serialized).unwrap();
-        assert_eq!(json["credentialStore"], "system");
+        assert_eq!(json["credentialStore"], "builtin");
         assert!(!serialized.contains("password123"));
     }
 }

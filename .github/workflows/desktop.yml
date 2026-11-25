@@ -23,6 +23,7 @@ jobs:
     outputs:
       publish: ${{ steps.plan.outputs.publish }}
       tag: ${{ steps.plan.outputs.tag }}
+      release_id: ${{ steps.draft.outputs.release_id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,6 +33,7 @@ jobs:
         id: plan
         run: python3 scripts/release_desktop.py plan
       - name: Create versioned release draft before building
+        id: draft
         if: steps.plan.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -118,6 +120,7 @@ jobs:
         if: needs.prepare.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          SHELL_EX_RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
         run: python scripts/release_desktop.py upload ${{ needs.prepare.outputs.tag }}
       - name: Save ordinary development build
         if: needs.prepare.outputs.publish != 'true'
@@ -137,4 +140,5 @@ jobs:
       - name: Verify all three platform assets and publish
         env:
           GH_TOKEN: ${{ github.token }}
+          SHELL_EX_RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
         run: python3 scripts/release_desktop.py finalize ${{ needs.prepare.outputs.tag }}

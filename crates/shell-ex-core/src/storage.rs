@@ -320,10 +320,10 @@ pub fn validate_host(h: &Host) -> Result<()> {
             "请检查名称、地址、端口与用户名",
         ));
     }
-    if !["builtin", "auto", "system", "local", "session"].contains(&h.credential_store.as_str()) {
+    if !["builtin", "auto", "local", "session"].contains(&h.credential_store.as_str()) {
         return Err(AppError::new(
             "INVALID_CREDENTIAL_STORE",
-            "请选择应用内加密库、系统凭据库或仅本次使用",
+            "请选择应用内加密库或仅本次使用",
         ));
     }
     if !["password", "key", "agent", "interactive"].contains(&h.auth_method.as_str()) {
@@ -430,7 +430,7 @@ mod tests {
             username: "user".into(),
             group: "".into(),
             auth_method: "agent".into(),
-            credential_store: "system".into(),
+            credential_store: "builtin".into(),
             private_key_path: None,
             proxy: None,
             jump_host_id: None,

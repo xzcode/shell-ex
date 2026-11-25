@@ -70,3 +70,9 @@ SFTP 无通用跨进程写锁或 compare-and-swap，本版只能核验写前与�
 必须明确安全边界：密钥随程序发布，可被提取；任何有软件程序和密文数据库的人都可能解密。此方案用于离线自用场景、减少明文暴露，而不抵御能分析程序或窃取本机文件的攻击者。推荐由用户自行保护登录账户与磁盘。
 
 旧 `credentialStore=auto` 对应的 `auto-vault.sqlite3 + auto-vault.key` 在存在时才打开，保持原有加密方式、原始文件及读取路径，不创建新的旧版密钥文件。旧 `local` 主密码加密库及 `system` 系统凭据库继续兼容。没有被用户要求切换保存位置时，不强行迁移旧凭据或删除密码文件。
+
+## v0.4.1 — no operating-system credential store
+
+Shell EX no longer links or calls the keyring crate. Legacy host JSON records that omit credentialStore or specify system are interpreted as builtin, including older encrypted backups. Existing host IDs, settings, trust records and application vault data are preserved; the old operating-system entries are neither read nor deleted. A password present only in an OS vault must be entered again. On a successful connection with a newly entered password or key passphrase, the default builtin option saves it locally unless the user unchecks the save control. If saving fails, the authenticated session remains available and a separate error is shown. Session-only connections are never persisted; legacy local/auto vaults retain their original formats. Explicit SSH Agent use remains separate from Shell EX password storage and may invoke platform-dependent agent behavior.
+
+The shared built-in AES key is not a substitute for disk encryption or access controls. The OS/WebView and third-party authentication may independently display security prompts; native macOS launch behavior requires real-device verification.
