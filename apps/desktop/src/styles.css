@@ -2991,7 +2991,6 @@ body.shell-resizing, body.shell-resizing * {
 
 .transfer-context-menu button > span { display: flex; align-items: center; gap: 8px; }
 .transfer-table-local-actions { min-width: 580px; }
-.transfer-table-local-actions th:last-child { width: 74px; }
 .transfer-table-local-actions .row-actions { flex-wrap: nowrap; }
 
 /* Transfer records have their own persisted widths. A trailing filler column
