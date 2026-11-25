@@ -7,8 +7,19 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
   await expect(page.getByText("界面预览", { exact: true })).toBeVisible();
-  await expect(page.locator(".terminal-area")).toBeEmpty();
+  await expect(page.locator(".terminal-area > .workspace-idle img")).toBeVisible();
+  await expect(page.locator(".terminal-area > .terminal-slot")).toHaveCount(0);
   await expect(page.locator(".welcome-screen")).toHaveCount(0);
+  const idleLogo = page.locator(".workspace-idle img");
+  await expect(idleLogo).toHaveAttribute("draggable", "false");
+  expect(await idleLogo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBeTruthy();
+  const centered = await idleLogo.evaluate((image) => {
+    const logo = image.getBoundingClientRect();
+    const area = image.closest(".terminal-area")!.getBoundingClientRect();
+    return Math.abs(logo.left + logo.width / 2 - area.left - area.width / 2) <= 1
+      && Math.abs(logo.top + logo.height / 2 - area.top - area.height / 2) <= 1;
+  });
+  expect(centered).toBeTruthy();
   await expect(page.getByText("0 个连接", { exact: true })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "graphite");
   await expect(page.locator(".header-center")).toHaveCount(0);
@@ -163,7 +174,8 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
   await page.screenshot({ path: info.outputPath("workbench-aurora.png"), fullPage: true });
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "aurora");
-  await expect(page.locator(".terminal-area")).toBeEmpty();
+  await expect(page.locator(".terminal-area > .workspace-idle img")).toBeVisible();
+  await expect(page.locator(".terminal-area > .terminal-slot")).toHaveCount(0);
   // Copy preserves the favorite flag, so the restored host appears in both sections.
   const restoredHost = page
     .locator(".host-item")

@@ -69,6 +69,7 @@ import {
 import { MonitorPanel } from "./MonitorPanel";
 import { SettingsDialog } from "./SettingsDialog";
 import { LinuxHelpDialog } from "./LinuxHelpDialog";
+import workspaceLogo from "../src-tauri/icons/128x128@2x.png";
 import { VaultDialog, type VaultStatus } from "./VaultDialog";
 import { hasDirtyDrafts } from "./drafts";
 type Toast = {
@@ -1124,6 +1125,11 @@ export default function App() {
               <div
                 className={`terminal-area ${splitEnabled ? "split-" + workspace.split : ""}`}
               >
+                {sessions.length === 0 && connecting.size === 0 && (
+                  <div className="workspace-idle" aria-hidden="true">
+                    <img src={workspaceLogo} alt="" draggable={false} />
+                  </div>
+                )}
                 {sessions.map((s) => (
                     <div
                       key={s.id}
