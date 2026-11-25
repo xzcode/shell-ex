@@ -60,6 +60,15 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
 
   const row = () =>
     page.locator(".host-item").filter({ hasText: "开发节点" }).first();
+  const hostName = row().locator(".host-main strong");
+  const hostAddress = row().locator(".host-main small");
+  await expect(hostName).toHaveCSS("user-select", "none");
+  await expect(hostAddress).toHaveCSS("user-select", "none");
+  await hostName.click({ button: "right" });
+  await expect(page.locator(".context-menu")).toBeVisible();
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
+  await row().getByRole("button", { name: "开发节点 更多操作" }).click();
+  await expect(page.locator(".context-menu")).toHaveCount(0);
   await row().getByRole("button", { name: "开发节点 更多操作" }).click();
   await expect(page.locator(".context-menu")).toBeVisible();
   await page

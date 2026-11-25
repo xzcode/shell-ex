@@ -2692,3 +2692,20 @@ select:not([multiple]) {
 }
 .file-context-menu .file-submenu { padding-left: 14px; }
 .file-context-menu .file-submenu button { font-size: 11px; }
+
+/* Desktop navigation and menus are controls, not selectable document text.
+   Keep normal selection in terminal, editor, and form fields. */
+.host-groups,
+.host-item,
+.host-item *,
+.group-heading,
+.context-menu,
+.context-menu *,
+.file-context-menu,
+.file-context-menu *,
+.file-list table,
+.file-list table *,
+.session-tab {
+  -webkit-user-select: none;
+  user-select: none;
+}

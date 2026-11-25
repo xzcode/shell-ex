@@ -771,6 +771,11 @@ export default function App() {
         className={`host-item${active?.hostId === host.id ? " active" : ""}`}
         key={host.id}
         onClick={(e) => e.stopPropagation()}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setHostMenu(slot + host.id);
+        }}
         onDoubleClick={() => void connectHost(host)}
       >
         <button
@@ -853,7 +858,7 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark">›_</span>
           <strong>Shell EX</strong>
-          <span className="version-tag">0.4.2</span>
+          <span className="version-tag">0.4.3</span>
         </div>
         <div className="header-actions">
           <IconButton
