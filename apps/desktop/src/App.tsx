@@ -72,6 +72,8 @@ import { LinuxHelpDialog } from "./LinuxHelpDialog";
 import workspaceLogo from "../src-tauri/icons/128x128@2x.png";
 import { VaultDialog, type VaultStatus } from "./VaultDialog";
 import { hasDirtyDrafts } from "./drafts";
+// Overlay window decorations are macOS-only. Browser previews keep the normal header.
+const macTitlebar = native && (/^Mac/i.test(navigator.platform) || /Macintosh/.test(navigator.userAgent));
 type Toast = {
   id: number;
   message: string;
@@ -857,12 +859,16 @@ export default function App() {
   };
   return (
     <div className="app-shell">
-      <header className="titlebar">
+      <header
+        className={`titlebar${macTitlebar ? " mac-titlebar" : ""}`}
+        data-tauri-drag-region={macTitlebar ? "" : undefined}
+      >
         <div className="brand">
           <span className="brand-mark">›_</span>
           <strong>Shell EX</strong>
-          <span className="version-tag">0.4.5</span>
+          <span className="version-tag">0.4.6</span>
         </div>
+        {macTitlebar && <div className="titlebar-drag" data-tauri-drag-region="" aria-hidden="true" />}
         <div className="header-actions">
           <IconButton
             title={tr("快速查找主机和操作 ⌘K")}

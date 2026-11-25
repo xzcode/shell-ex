@@ -2904,3 +2904,21 @@ select:not([multiple]) {
   filter: grayscale(1);
   -webkit-user-drag: none;
 }
+
+/* macOS retains the native traffic lights and overlays its title bar.
+   The left inset keeps the three native controls clear of the app brand.
+   Only the header and its empty spacer are drag targets, never its buttons. */
+.titlebar.mac-titlebar {
+  padding-left: 100px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.mac-titlebar > .brand,
+.mac-titlebar > .header-actions {
+  flex-shrink: 0;
+}
+.mac-titlebar > .titlebar-drag {
+  flex: 1 1 0;
+  align-self: stretch;
+  min-width: 0;
+}

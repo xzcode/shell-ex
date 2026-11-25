@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "mac-titlebar",
+  "description": "Allow only the local macOS main window to drag its integrated title bar.",
+  "windows": [
+    "main"
+  ],
+  "platforms": [
+    "macOS"
+  ],
+  "permissions": [
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize"
+  ]
+}
