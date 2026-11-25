@@ -697,5 +697,7 @@ export const en: Readonly<Record<string, string>> = {
   "递归删除目录…": "Recursively delete directory…",
   "文件权限…": "File permissions…",
   "Downloads never overwrite existing local files": "Downloads never overwrite existing local files",
-  "Destination exists. Start again with a different path or explicit upload overwrite permission": "Destination exists. Choose another path, or explicitly allow overwriting for uploads."
+  "Destination exists. Start again with a different path or explicit upload overwrite permission": "Destination exists. Choose another path, or explicitly allow overwriting for uploads.",
+  "Linux 命令帮助": "Linux command help",
+  "离线查阅常用命令、参数和示例": "Look up common commands, options and examples offline"
 };

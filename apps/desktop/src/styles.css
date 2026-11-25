@@ -2751,3 +2751,132 @@ select:not([multiple]) {
   scrollbar-gutter: stable;
   overscroll-behavior: contain;
 }
+
+/* Offline Linux command reference. Fixed, theme-aware geometry; only lists scroll. */
+.modal.linux-help-modal {
+  width: 930px;
+  max-width: calc(100vw - 56px);
+  height: min(740px, calc(100vh - 56px));
+  max-height: calc(100vh - 56px);
+}
+.linux-help-modal > .modal-content {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+.linux-help-layout {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+.linux-help-nav {
+  flex: 0 0 188px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 8px;
+  border-right: 1px solid var(--border-soft);
+  background: var(--bg);
+}
+.linux-help-nav button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  min-height: 34px;
+  padding: 8px 10px;
+  gap: 6px;
+  text-align: left;
+  font-size: 11px;
+  color: var(--secondary);
+  border-radius: 4px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.linux-help-nav button:hover { background: var(--hover); }
+.linux-help-nav button[aria-pressed="true"] {
+  background: var(--selected);
+  color: var(--accent);
+}
+.linux-help-nav button > small { color: var(--muted); font-size: 10px; }
+.linux-help-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+.linux-help-search {
+  padding: 14px 18px 10px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.linux-help-search-field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--input);
+  color: var(--muted);
+  min-height: 36px;
+}
+.linux-help-search-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  height: 34px;
+  color: var(--text);
+}
+.linux-help-search-field:focus-within { border-color: var(--accent); }
+.linux-help-results-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  padding-top: 9px;
+}
+.linux-help-results { flex: 1 1 0; min-height: 0; padding: 14px 18px; overflow: auto; scrollbar-gutter: stable; }
+.linux-command-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  background: var(--bg);
+  padding: 13px;
+  margin-bottom: 10px;
+  color: var(--text);
+  min-width: 0;
+}
+.linux-command-card > header { display: flex; align-items: center; gap: 8px; color: var(--accent); margin-bottom: 7px; }
+.linux-command-card h3 { margin: 0; font: 600 13px/1.5 Menlo, Consolas, monospace; }
+.linux-command-card p { margin: 5px 0; font-size: 11px; line-height: 1.7; color: var(--secondary); overflow-wrap: anywhere; }
+.linux-help-options { margin-top: 12px; }
+.linux-help-options strong, .linux-help-example strong { font-size: 10px; color: var(--muted); font-weight: 600; }
+.linux-help-example { margin-top: 10px; }
+.linux-help-example > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.linux-help-example pre {
+  margin: 5px 0;
+  padding: 10px;
+  background: var(--terminal);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  color: var(--text);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 11px/1.6 Menlo, Consolas, monospace;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.linux-help-warning { display: flex; gap: 7px; align-items: flex-start; margin-top: 9px; font-size: 10px; line-height: 1.6; color: var(--amber); }
+.linux-help-warning svg { flex-shrink: 0; }
+.linux-help-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 9px; padding: 35px 8px; color: var(--muted); }
+.linux-help-hint { padding: 10px 18px; font-size: 10px; line-height: 1.6; color: var(--muted); border-top: 1px solid var(--border-soft); flex-shrink: 0; }
+.linux-help-error { padding: 8px 18px; color: var(--red); font-size: 11px; flex-shrink: 0; }

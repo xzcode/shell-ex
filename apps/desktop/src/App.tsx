@@ -68,6 +68,7 @@ import {
 } from "./OperationsPanels";
 import { MonitorPanel } from "./MonitorPanel";
 import { SettingsDialog } from "./SettingsDialog";
+import { LinuxHelpDialog } from "./LinuxHelpDialog";
 import { VaultDialog, type VaultStatus } from "./VaultDialog";
 import { hasDirtyDrafts } from "./drafts";
 type Toast = {
@@ -129,6 +130,7 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [bootError, setBootError] = useState("");
   const [help, setHelp] = useState(false);
+  const [linuxHelp, setLinuxHelp] = useState(false);
   const connectionLock = useRef(false);
   const closingSessions = useRef(new Set<string>());
   const activeRef = useRef(activeId);
@@ -858,7 +860,7 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark">›_</span>
           <strong>Shell EX</strong>
-          <span className="version-tag">0.4.4</span>
+          <span className="version-tag">0.4.5</span>
         </div>
         <div className="header-actions">
           <IconButton
@@ -997,6 +999,11 @@ export default function App() {
                   <TerminalSquare size={16} />
                   <span>{tr("本地终端")}</span>
                   <kbd>⌘⇧L</kbd>
+                </button>
+                <button onClick={() => setLinuxHelp(true)}>
+                  <Code2 size={16} />
+                  <span>{tr("Linux 命令帮助")}</span>
+                  <ArrowUpRight size={13} />
                 </button>
                 <button onClick={() => setHelp(true)}>
                   <CircleHelp size={16} />
@@ -1443,6 +1450,14 @@ export default function App() {
               </span>
               <kbd>⌘⇧N</kbd>
             </button>
+            <button onClick={() => { setPalette(false); setLinuxHelp(true); }}>
+              <Code2 size={17} />
+              <span>
+                <strong>{tr("Linux 命令帮助")}</strong>
+                <small>{tr("离线查阅常用命令、参数和示例")}</small>
+              </span>
+              <ArrowUpRight size={15} />
+            </button>
             <button onClick={() => void openLocal()}>
               <TerminalSquare size={17} />
               <span>
@@ -1454,6 +1469,7 @@ export default function App() {
           </div>
         </Modal>
       )}
+      {linuxHelp && <LinuxHelpDialog onClose={() => setLinuxHelp(false)} />}
       {help && (
         <Modal
           title={tr("使用指南")}
@@ -1494,6 +1510,9 @@ export default function App() {
             <Command size={17} />
             <p>{tr("macOS 使用 ⌘ 快捷键；Windows 与 Linux 使用 Ctrl。终端中的 Ctrl+C 保持发送中断信号。")}</p>
           </div>
+          <button className="button secondary" onClick={() => { setHelp(false); setLinuxHelp(true); }}>
+            <Code2 size={15} />{tr("Linux 命令帮助")}
+          </button>
         </Modal>
       )}
       <div className="toast-stack" aria-live="polite">
