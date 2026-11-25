@@ -1,5 +1,5 @@
 import { tr, getLanguagePreference, setLanguagePreference, type LanguagePreference } from "./i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Palette,
   TerminalSquare,
@@ -41,6 +41,10 @@ export function SettingsDialog({
   const [form, setForm] = useState({ ...settings });
   const [language, setLanguage] = useState<LanguagePreference>(getLanguagePreference);
   const [tab, setTab] = useState("appearance");
+  const contentRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (contentRef.current) contentRef.current.scrollTop = 0;
+  }, [tab]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [backup, setBackup] = useState<"export" | "import" | null>(null);
@@ -74,7 +78,7 @@ export function SettingsDialog({
         .catch((e) =>
           setUpdate({
             configured: false,
-            version: "0.4.3",
+            version: "0.4.4",
             reason: errorText(e),
           }),
         );
@@ -160,11 +164,12 @@ export function SettingsDialog({
       title={tr("设置")}
       subtitle={tr("让工作台适合你的使用习惯。")}
       onClose={onClose}
+      className="settings-modal"
       wide
       footer={
         <>
           <span className="footer-note">
-            Shell EX · {update?.version || "0.4.3"}
+            Shell EX · {update?.version || "0.4.4"}
           </span>
           <button className="button secondary" onClick={onClose}>{tr("取消")}</button>
           <button
@@ -190,6 +195,7 @@ export function SettingsDialog({
             <button
               key={t.id}
               className={tab === t.id ? "active" : ""}
+              aria-current={tab === t.id ? "page" : undefined}
               onClick={() => setTab(t.id)}
             >
               <t.icon size={16} />
@@ -197,7 +203,7 @@ export function SettingsDialog({
             </button>
           ))}
         </nav>
-        <div className="settings-content">
+        <div ref={contentRef} className="settings-content">
           {error && <ErrorBox message={error} />}
           {tab === "appearance" && (
             <>
@@ -472,7 +478,7 @@ export function SettingsDialog({
               <div className="brand-mark large">›_</div>
               <h2>Shell EX</h2>
               <p>{tr("你的服务器，你的工作台。")}</p>
-              <span className="version">v{update?.version || "0.1.0"}</span>
+              <span className="version">v{update?.version || "0.4.4"}</span>
               <div className="settings-list">
                 <div>
                   <span>{tr("运行环境")}</span>
