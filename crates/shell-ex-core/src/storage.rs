@@ -397,6 +397,12 @@ pub fn validate_workspace(w: &Workspace) -> Result<()> {
         || !(160.0..=800.0).contains(&w.sidebar_width)
         || !w.files_height.is_finite()
         || !(120.0..=2000.0).contains(&w.files_height)
+        || !(240.0..=1000.0).contains(&w.monitor_width)
+        || !(120.0..=700.0).contains(&w.file_tree_width)
+        || w.file_column_widths.len() != 6
+        || w.file_column_widths
+            .iter()
+            .any(|v| !(56.0..=1400.0).contains(v))
     {
         return Err(AppError::new(
             "INVALID_WORKSPACE",
@@ -420,6 +426,34 @@ fn validate_snippet(s: &Snippet) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn workspace_resize_preferences_are_backward_compatible_and_bounded() {
+        let previous: crate::models::Workspace = serde_json::from_value(serde_json::json!({
+            "hostIds": [], "activeHostId": null, "sidebarWidth": 236, "filesHeight": 326,
+            "monitorVisible": true, "filesVisible": true, "split": "none"
+        }))
+        .unwrap();
+        assert_eq!(
+            previous.file_column_widths,
+            vec![280.0, 100.0, 92.0, 160.0, 132.0, 116.0]
+        );
+        assert_eq!(previous.file_tree_width, 210.0);
+        assert_eq!(previous.monitor_width, 365.0);
+        assert!(super::validate_workspace(&previous).is_ok());
+        let mut changed = previous;
+        changed.file_tree_width = 350.0;
+        changed.monitor_width = 520.0;
+        changed.file_column_widths[0] = 410.0;
+        assert!(super::validate_workspace(&changed).is_ok());
+        let roundtrip: crate::models::Workspace =
+            serde_json::from_str(&serde_json::to_string(&changed).unwrap()).unwrap();
+        assert_eq!(roundtrip.file_column_widths[0], 410.0);
+        assert_eq!(roundtrip.monitor_width, 520.0);
+        assert_eq!(roundtrip.file_tree_width, 350.0);
+        changed.file_column_widths.pop();
+        assert!(super::validate_workspace(&changed).is_err());
+    }
+
     use super::*;
     fn host() -> Host {
         Host {

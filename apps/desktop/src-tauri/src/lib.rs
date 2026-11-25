@@ -29,6 +29,8 @@ use std::{
 use tauri::{ipc::Channel, Manager, State};
 use zeroize::Zeroizing;
 
+mod monitor_window;
+
 struct AppState {
     store: Arc<Storage>,
     vault: Arc<RoutedVault>,
@@ -37,6 +39,7 @@ struct AppState {
     files: FileService,
     transfers: Arc<TransferManager>,
     monitor: Arc<MonitorService>,
+    detached_monitor: monitor_window::DetachedState,
     docker: DockerService,
     tunnels: Arc<TunnelManager>,
     probes: Mutex<HashMap<String, (String, u16, HostKeyInfo)>>,
@@ -69,6 +72,7 @@ impl AppState {
             )),
             files: FileService::new(ssh.clone()),
             monitor: Arc::new(MonitorService::new(ssh.clone())),
+            detached_monitor: monitor_window::DetachedState::default(),
             docker: DockerService::new(ssh.clone()),
             tunnels: Arc::new(TunnelManager::new(ssh.clone())),
             store,
@@ -1121,74 +1125,110 @@ pub fn run() {
         );
         builder = builder.plugin(tauri_plugin_updater::Builder::new().pubkey(key).build());
     }
+    let handler = tauri::generate_handler![
+        hosts_list,
+        host_save,
+        host_delete,
+        host_secret_status,
+        host_secret_delete,
+        vault_status,
+        vault_initialize,
+        vault_unlock,
+        vault_lock,
+        vault_change_password,
+        ssh_probe,
+        ssh_trust,
+        ssh_connect,
+        ssh_auth_respond,
+        local_open,
+        terminal_write,
+        terminal_resize,
+        terminal_ack,
+        session_close,
+        sftp_realpath,
+        sftp_list,
+        sftp_mkdir,
+        sftp_create_file,
+        sftp_remove_tree,
+        download_destination_exists,
+        transfer_start_archive,
+        sftp_rename,
+        sftp_remove,
+        sftp_chmod,
+        file_read,
+        file_save,
+        transfer_start,
+        transfer_plan_directory,
+        transfer_start_directory,
+        transfers_list,
+        transfer_control,
+        monitor_snapshot,
+        monitor_window::monitor_window_open,
+        monitor_window::monitor_window_update,
+        monitor_window::monitor_window_is_open,
+        monitor_window::monitor_window_context,
+        monitor_window::monitor_window_snapshot,
+        monitor_window::monitor_window_dock,
+        process_signal,
+        docker_list,
+        docker_images,
+        docker_action,
+        docker_logs,
+        tunnel_start,
+        tunnels_list,
+        tunnel_stop,
+        settings_get,
+        settings_save,
+        workspace_get,
+        workspace_save,
+        snippets_list,
+        snippet_save,
+        snippet_delete,
+        ssh_config_import,
+        hosts_import,
+        backup_export,
+        backup_import,
+        update_config,
+    ];
     let app = builder
         .setup(|app| {
             let state = AppState::new(app.path().app_data_dir()?)?;
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            hosts_list,
-            host_save,
-            host_delete,
-            host_secret_status,
-            host_secret_delete,
-            vault_status,
-            vault_initialize,
-            vault_unlock,
-            vault_lock,
-            vault_change_password,
-            ssh_probe,
-            ssh_trust,
-            ssh_connect,
-            ssh_auth_respond,
-            local_open,
-            terminal_write,
-            terminal_resize,
-            terminal_ack,
-            session_close,
-            sftp_realpath,
-            sftp_list,
-            sftp_mkdir,
-            sftp_create_file,
-            sftp_remove_tree,
-            download_destination_exists,
-            transfer_start_archive,
-            sftp_rename,
-            sftp_remove,
-            sftp_chmod,
-            file_read,
-            file_save,
-            transfer_start,
-            transfer_plan_directory,
-            transfer_start_directory,
-            transfers_list,
-            transfer_control,
-            monitor_snapshot,
-            process_signal,
-            docker_list,
-            docker_images,
-            docker_action,
-            docker_logs,
-            tunnel_start,
-            tunnels_list,
-            tunnel_stop,
-            settings_get,
-            settings_save,
-            workspace_get,
-            workspace_save,
-            snippets_list,
-            snippet_save,
-            snippet_delete,
-            ssh_config_import,
-            hosts_import,
-            backup_export,
-            backup_import,
-            update_config,
-        ])
+        .invoke_handler(move |invoke: tauri::ipc::Invoke| {
+            if !monitor_window::command_allowed(
+                invoke.message.webview_ref().label(),
+                invoke.message.command(),
+            ) {
+                invoke.resolver.reject(AppError::new(
+                    "WINDOW_PERMISSION_DENIED",
+                    "This command is unavailable in the monitor window",
+                ));
+                return true;
+            }
+            handler(invoke)
+        })
         .build(context)
         .expect("Shell EX could not initialize its local application data");
     app.run(|handle, event| {
+        if let tauri::RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::Destroyed,
+            ..
+        } = &event
+        {
+            if label == monitor_window::LABEL {
+                handle.state::<AppState>().detached_monitor.clear();
+            } else if label == "main" {
+                // Closing the main workspace must not leave a second window or
+                // remote sessions alive indefinitely.
+                handle.state::<AppState>().detached_monitor.clear();
+                if let Some(window) = handle.get_webview_window(monitor_window::LABEL) {
+                    let _ = window.destroy();
+                }
+            }
+        }
         if let tauri::RunEvent::Exit = event {
             let state = handle.state::<AppState>();
             let _ = state.vault.local().lock();

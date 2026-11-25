@@ -23,6 +23,7 @@ function readPreference(): LanguagePreference {
 }
 
 let preference = readPreference();
+let localeOverride: Locale | null = null;
 function systemLanguage(): string {
   return typeof navigator !== "undefined" ? navigator.language : "en";
 }
@@ -31,7 +32,7 @@ export function getLanguagePreference(): LanguagePreference {
   return preference;
 }
 export function getLocale(): Locale {
-  return resolveLocale(preference, systemLanguage());
+  return localeOverride ?? resolveLocale(preference, systemLanguage());
 }
 
 export function translate(locale: Locale, key: string, ...args: unknown[]): string {
@@ -53,6 +54,13 @@ function notifyLanguageChanged() {
     document.title = tr("Shell EX · 服务器工作台");
   }
   listeners.forEach((listener) => listener());
+}
+
+/** A secondary window can follow the main window without rewriting its preference. */
+export function setLocaleOverride(value: Locale | null) {
+  if (localeOverride === value) return;
+  localeOverride = value;
+  notifyLanguageChanged();
 }
 
 export function setLanguagePreference(value: LanguagePreference) {

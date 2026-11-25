@@ -148,6 +148,9 @@ export type Workspace = {
   activeHostId: string | null;
   sidebarWidth: number;
   filesHeight: number;
+  monitorWidth: number;
+  fileTreeWidth: number;
+  fileColumnWidths: number[];
   monitorVisible: boolean;
   filesVisible: boolean;
   split: "none" | "horizontal" | "vertical";
@@ -177,6 +180,9 @@ export const defaultWorkspace: Workspace = {
   activeHostId: null,
   sidebarWidth: 236,
   filesHeight: 326,
+  monitorWidth: 365,
+  fileTreeWidth: 210,
+  fileColumnWidths: [280, 100, 92, 160, 132, 116],
   monitorVisible: true,
   filesVisible: true,
   split: "none",

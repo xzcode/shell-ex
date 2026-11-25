@@ -39,6 +39,8 @@ import {
 } from "./api";
 import { Busy, Empty, ErrorBox, Field, IconButton, Modal } from "./ui";
 import { DirectoryTree } from "./DirectoryTree";
+import { ResizeHandle } from "./ResizeHandle";
+import { defaultWorkspace } from "./types";
 const EditorDialog = lazy(() => import("./RemoteEditor"));
 function permissionText(entry: FileEntry): string {
   if (entry.permissions == null) return "—";
@@ -55,10 +57,18 @@ export function FilePanel({
   session,
   notify,
   onTransfer,
+  treeWidth,
+  columnWidths,
+  onTreeWidth,
+  onColumnWidth,
 }: {
   session: Session | null;
   notify: Notify;
   onTransfer: () => void;
+  treeWidth: number;
+  columnWidths: number[];
+  onTreeWidth: (width: number) => void;
+  onColumnWidth: (index: number, width: number) => void;
 }) {
   const [path, setPath] = useState(".");
   const [inputPath, setInputPath] = useState(".");
@@ -95,6 +105,17 @@ export function FilePanel({
   const [conflict, setConflict] = useState<"skip" | "overwrite">("skip");
   const request = useRef(0);
   const panel = useRef<HTMLDivElement>(null);
+  const explorerRef = useRef<HTMLDivElement>(null);
+  const [explorerWidth, setExplorerWidth] = useState(800);
+  useEffect(() => {
+    if (!explorerRef.current) return;
+    const target = explorerRef.current;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width > 0) setExplorerWidth(entry.contentRect.width);
+    });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [session?.id, session?.status, session?.local]);
   const sessionIdentity = useRef(session?.id);
   sessionIdentity.current = session?.id;
   const remote =
@@ -481,6 +502,9 @@ export function FilePanel({
       e.name.toLowerCase().includes(filter.toLowerCase()),
   );
   const chosen = entries.filter((e) => selected.has(e.path));
+  const columnLabels = ["文件名", "大小", "类型", "修改时间", "权限", "用户/用户组"];
+  const columnMin = [120, 64, 64, 112, 90, 78];
+  const maxTreeWidth = Math.max(120, Math.min(700, explorerWidth - 200));
   const menuTargets = menu?.targets || [];
   const single = menuTargets.length === 1 ? menuTargets[0] : undefined;
   const canOpen = !!single;
@@ -583,14 +607,20 @@ export function FilePanel({
         </IconButton>
       </div>
       {error && <ErrorBox message={error} retry={() => void load()} />}
-      <div className="file-explorer">
+      <div className="file-explorer" ref={explorerRef}>
         <DirectoryTree key={remote.id} sessionId={remote.id} currentPath={path}
-          onNavigate={navigate} />
+          onNavigate={navigate} width={Math.min(treeWidth, maxTreeWidth)} />
+        <ResizeHandle label={tr("调整目录树宽度")} value={Math.min(treeWidth, maxTreeWidth)}
+          min={120} max={maxTreeWidth} onChange={onTreeWidth}
+          onReset={() => onTreeWidth(defaultWorkspace.fileTreeWidth)} />
         <div className="file-list scroll-area" onContextMenu={(e) => {
           e.preventDefault();
           openContext(e.clientX, e.clientY);
         }}>
-        <table>
+        <table className="resizable-file-table" style={{ width: 34 + columnWidths.reduce((sum, width) => sum + width, 0) }}>
+          <colgroup><col style={{ width: 34 }} />
+            {columnWidths.map((width, i) => <col key={i} style={{ width }} />)}
+          </colgroup>
           <thead>
             <tr>
               <th className="check-cell">
@@ -610,12 +640,15 @@ export function FilePanel({
                   }
                 />
               </th>
-              <th>{tr("文件名")}</th>
-              <th>{tr("大小")}</th>
-              <th>{tr("类型")}</th>
-              <th>{tr("修改时间")}</th>
-              <th>{tr("权限")}</th>
-              <th>{tr("用户/用户组")}</th>
+              {columnLabels.map((label, index) => (
+                <th key={label} title={tr(label)} className="resizable-file-heading">
+                  <span>{tr(label)}</span>
+                  <ResizeHandle column label={tr("调整列宽：{0}", tr(label))}
+                    value={columnWidths[index]} min={columnMin[index]} max={1400}
+                    onChange={(width) => onColumnWidth(index, width)}
+                    onReset={() => onColumnWidth(index, defaultWorkspace.fileColumnWidths[index])} />
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -655,7 +688,8 @@ export function FilePanel({
                     }
                   />
                 </td>
-                <td className="file-name">
+                <td className="file-name" title={entry.name}>
+                  <div className="file-name-content">
                   {entry.isSymlink ? (
                     <Link2 size={15} className="accent" />
                   ) : entry.isDir ? (
@@ -668,6 +702,7 @@ export function FilePanel({
                     <File size={15} />
                   )}
                   <span>{entry.name}</span>
+                  </div>
                 </td>
                 <td>{entry.isDir ? "—" : bytes(entry.size)}</td>
                 <td>{entry.isSymlink ? tr("符号链接") : entry.isDir ? tr("文件夹") : tr("文件")}</td>

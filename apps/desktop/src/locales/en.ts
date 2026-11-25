@@ -699,5 +699,13 @@ export const en: Readonly<Record<string, string>> = {
   "Downloads never overwrite existing local files": "Downloads never overwrite existing local files",
   "Destination exists. Start again with a different path or explicit upload overwrite permission": "Destination exists. Choose another path, or explicitly allow overwriting for uploads.",
   "Linux 命令帮助": "Linux command help",
-  "离线查阅常用命令、参数和示例": "Look up common commands, options and examples offline"
+  "离线查阅常用命令、参数和示例": "Look up common commands, options and examples offline",
+  "调整目录树宽度": "Resize directory tree",
+  "调整列宽：{0}": "Resize column: {0}",
+  "调整监控面板宽度": "Resize monitor panel",
+  "分离监控面板": "Detach monitor panel",
+  "停靠到工作台": "Dock to workspace",
+  "停靠监控面板": "Dock monitor panel",
+  "跟随主窗口当前 SSH 会话 · 独立监控窗口仅查看数据": "Follows the active SSH session in the main window · Read-only monitoring",
+  "The monitored session has changed or closed": "The monitored session has changed or closed"
 };

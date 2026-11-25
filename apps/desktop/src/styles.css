@@ -2922,3 +2922,43 @@ select:not([multiple]) {
   align-self: stretch;
   min-width: 0;
 }
+
+/* Resize handles remain discoverable without wide permanent divider bands. */
+.resize-handle.vertical.wide-hit { width: 5px; cursor: col-resize; touch-action: none; }
+.resize-handle.vertical.wide-hit::before { inset: 0; }
+.resize-handle.vertical.wide-hit:hover,
+.resize-handle.vertical.wide-hit:focus-visible { background: var(--accent-strong); }
+.file-explorer .directory-tree { border-right: 0; max-width: calc(100% - 205px); }
+.file-explorer .resizable-file-table { table-layout: fixed; min-width: 0; }
+.resizable-file-table th, .resizable-file-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resizable-file-table .resizable-file-heading { position: relative; padding-right: 12px; }
+.resizable-file-heading > span { display: block; overflow: hidden; text-overflow: ellipsis; }
+.column-resize-handle {
+  position: absolute; top: 0; bottom: 0; right: 0; width: 8px;
+  cursor: col-resize; touch-action: none; z-index: 2;
+  border-right: 1px solid var(--border);
+}
+.column-resize-handle:hover, .column-resize-handle:focus-visible { background: var(--accent-strong); }
+.file-explorer .resizable-file-table td.file-name { display: table-cell; min-width: 0; max-width: none; }
+.file-name-content { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.file-name-content > svg { flex-shrink: 0; }
+.file-name-content > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.workspace-main > .monitor-panel { max-width: calc(100% - 245px); min-width: 0; border-left: 0; }
+.monitor-summary-grid, .monitor-resource-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr));
+}
+
+.detached-monitor-window {
+  display: flex; flex-direction: column; width: 100%; height: 100%;
+  min-width: 0; min-height: 0; overflow: hidden;
+  background: var(--panel);
+}
+.detached-monitor-window > .monitor-panel {
+  flex: 1 1 0; width: 100%; min-width: 0; min-height: 0; max-width: none;
+  border: 0;
+}
+.detached-monitor-note, .detached-monitor-error {
+  flex-shrink: 0; padding: 7px 10px; font-size: 10px;
+  color: var(--muted); border-top: 1px solid var(--border-soft);
+}
+.detached-monitor-error { color: var(--red); }

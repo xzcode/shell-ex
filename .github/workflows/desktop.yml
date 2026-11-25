@@ -88,6 +88,9 @@ jobs:
       - name: Native terminal delivery and cleanup tests
         if: runner.os == 'Linux'
         run: cargo test --release --locked --target x86_64-unknown-linux-gnu -p shell-ex --lib terminal_delivery_tests -- --test-threads=1
+      - name: Native detached-monitor command permission tests
+        if: runner.os == 'Linux'
+        run: cargo test --release --locked --target x86_64-unknown-linux-gnu -p shell-ex --lib monitor_window::tests -- --test-threads=1
       - name: Record Linux installer dependencies
         if: runner.os == 'Linux'
         shell: bash

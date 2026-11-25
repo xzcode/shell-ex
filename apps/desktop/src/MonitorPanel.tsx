@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Activity, Cpu, MemoryStick, HardDrive, ArrowDown, ArrowUp,
   Clock3, Pause, Play, X, RefreshCw, Server, Network,
-  Gauge, Layers3, ShieldCheck,
+  Gauge, Layers3, ShieldCheck, ExternalLink, PanelRight,
 } from "lucide-react";
 import type { AppSettings, MonitorSnapshot, Notify, Session } from "./types";
 import { api, bytes, confirmAction, errorText } from "./api";
@@ -46,9 +46,12 @@ function NetworkChart({ samples }: { samples: { rx: number; tx: number }[] }) {
     </svg>
   );
 }
-export function MonitorPanel({ session, settings, notify, onClose }: {
-  session: Session | null;
-  settings: AppSettings;
+export function MonitorPanel({ session, settings, notify, onClose, width, onDetach, onDock }: {
+  session: Pick<Session, "id" | "name" | "local" | "status"> | null;
+  settings: Pick<AppSettings, "monitorInterval">;
+  width?: number;
+  onDetach?: () => void;
+  onDock?: () => void;
   notify: Notify;
   onClose: () => void;
 }) {
@@ -65,6 +68,7 @@ export function MonitorPanel({ session, settings, notify, onClose }: {
   const previous = useRef<{ rx: number; tx: number; at: number } | null>(null);
   const [refresh, setRefresh] = useState(0);
   const remote = session && !session.local && session.status === "connected" ? session : null;
+  const detached = !!onDock;
 
   useEffect(() => {
     setSnapshot(null);
@@ -73,8 +77,11 @@ export function MonitorPanel({ session, settings, notify, onClose }: {
     setNetworkHistory([]);
     setSelectedInterface("all");
     setLastUpdated(null);
+    setSampleDuration(null);
+    setShowProcesses(false);
+    setNetworkRate({ rx: 0, tx: 0 });
     previous.current = null;
-  }, [session?.id]);
+  }, [remote?.id]);
   useEffect(() => {
     previous.current = null;
     setNetworkRate({ rx: 0, tx: 0 });
@@ -91,7 +98,7 @@ export function MonitorPanel({ session, settings, notify, onClose }: {
       }
       try {
         const started = performance.now();
-        const data = await api<MonitorSnapshot>("monitor_snapshot", { sessionId: remote.id });
+        const data = await api<MonitorSnapshot>(detached ? "monitor_window_snapshot" : "monitor_snapshot", { sessionId: remote.id });
         if (disposed) return;
         const now = Date.now();
         setSnapshot(data);
@@ -127,7 +134,7 @@ export function MonitorPanel({ session, settings, notify, onClose }: {
     };
     void tick();
     return () => { disposed = true; clearTimeout(timer); };
-  }, [remote?.id, paused, settings.monitorInterval, selectedInterface, refresh]);
+  }, [remote?.id, paused, settings.monitorInterval, selectedInterface, refresh, detached]);
 
   const mem = snapshot ? percentage(snapshot.memoryUsed, snapshot.memoryTotal) : null;
   const cpu = snapshot?.cpuPercent ?? null;
@@ -139,7 +146,7 @@ export function MonitorPanel({ session, settings, notify, onClose }: {
   const topProcesses = [...(snapshot?.processes || [])].sort((a, b) => b.cpu - a.cpu).slice(0, 5);
 
   return (
-    <aside className="monitor-panel" aria-label={tr("服务器监控")}>
+    <aside className="monitor-panel" style={width === undefined ? undefined : { width }} aria-label={tr("服务器监控")}>
       <header className="section-heading">
         <span><Activity size={14} />{" "}{tr("实时监控")}</span>
         <div>
@@ -148,7 +155,9 @@ export function MonitorPanel({ session, settings, notify, onClose }: {
             onClick={() => setPaused((v) => !v)}>
             {paused ? <Play size={13} /> : <Pause size={13} />}
           </IconButton>
-          <IconButton title={tr("隐藏监控")} onClick={onClose}><X size={14} /></IconButton>
+          {onDetach && <IconButton title={tr("分离监控面板")} onClick={onDetach}><ExternalLink size={14} /></IconButton>}
+          {onDock ? <IconButton title={tr("停靠到工作台")} onClick={onDock}><PanelRight size={14} /></IconButton>
+            : <IconButton title={tr("隐藏监控")} onClick={onClose}><X size={14} /></IconButton>}
         </div>
       </header>
       {!remote ? (
@@ -262,15 +271,15 @@ export function MonitorPanel({ session, settings, notify, onClose }: {
           </footer>
         </div>
       )}
-      {showProcesses && snapshot && (
+      {showProcesses && snapshot && remote && (
         <Modal title={tr("进程 · ") + snapshot.hostname} onClose={() => setShowProcesses(false)} wide>
           <div className="process-table scroll-area">
-            <table><thead><tr><th>PID</th><th>{tr("用户")}</th><th>CPU</th><th>{tr("内存")}</th><th>{tr("命令")}</th><th>{tr("操作")}</th></tr></thead>
+            <table><thead><tr><th>PID</th><th>{tr("用户")}</th><th>CPU</th><th>{tr("内存")}</th><th>{tr("命令")}</th>{!detached && <th>{tr("操作")}</th>}</tr></thead>
               <tbody>{snapshot.processes.map((p) => <tr key={p.pid}>
                 <td>{p.pid}</td><td>{p.user}</td><td>{p.cpu.toFixed(1)}%</td>
                 <td>{p.memory.toFixed(1)}%</td>
                 <td className="mono truncate" title={p.command}>{p.command}</td>
-                <td><button className="text-button red" onClick={async () => {
+                {!detached && <td><button className="text-button red" onClick={async () => {
                   if (!remote || !(await confirmAction(
                     tr("向 ") + p.pid + " (" + p.command + tr(") 发送 TERM 信号？"), tr("终止进程")))) return;
                   try {
@@ -278,7 +287,7 @@ export function MonitorPanel({ session, settings, notify, onClose }: {
                     setRefresh((n) => n + 1);
                     notify(tr("TERM 信号已发送。"), "success");
                   } catch (e) { notify(errorText(e), "error"); }
-                }}>{tr("终止")}</button></td>
+                }}>{tr("终止")}</button></td>}
               </tr>)}</tbody>
             </table>
           </div>

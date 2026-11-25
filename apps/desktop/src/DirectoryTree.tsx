@@ -6,8 +6,8 @@ import { api, errorText } from "./api";
 
 /** Lazy SFTP folder tree. Only directories that are expanded or in the active path are queried. */
 export function DirectoryTree({
-  sessionId, currentPath, onNavigate,
-}: { sessionId: string; currentPath: string; onNavigate: (path: string) => void }) {
+  sessionId, currentPath, onNavigate, width,
+}: { sessionId: string; currentPath: string; onNavigate: (path: string) => void; width: number }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["/"]));
   const [nodes, setNodes] = useState<Record<string, FileEntry[]>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -99,7 +99,7 @@ export function DirectoryTree({
   }
 
   return (
-    <aside className="directory-tree scroll-area" aria-label={tr("远程目录树")}>
+    <aside className="directory-tree scroll-area" style={{ flexBasis: width }} aria-label={tr("远程目录树")}>
       <div className={`folder-tree-row${currentPath === "/" ? " selected" : ""}`}
         role="treeitem" aria-expanded={expanded.has("/")} aria-selected={currentPath === "/"} tabIndex={0}
         onKeyDown={(e) => { if (e.key === "Enter") onNavigate("/"); }}

@@ -1,4 +1,5 @@
 import { tr, useLocale } from "./i18n";
+import type { MonitorWindowContext } from "./DetachedMonitor";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Channel } from "@tauri-apps/api/core";
 import {
@@ -60,6 +61,7 @@ import {
   receiveTerminalEvent,
 } from "./TerminalView";
 import { FilePanel } from "./FilePanel";
+import { ResizeHandle, clampWidth } from "./ResizeHandle";
 import {
   DockerPanel,
   SnippetPanel,
@@ -103,10 +105,22 @@ const panelItems = [
   { id: "docker", name: "Docker", icon: Container },
 ];
 export default function App() {
-  useLocale();
+  const locale = useLocale();
   const [hosts, setHosts] = useState<Host[]>([]);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [workspace, setWorkspace] = useState<Workspace>(defaultWorkspace);
+  const mainArea = useRef<HTMLDivElement>(null);
+  const [mainAreaWidth, setMainAreaWidth] = useState(1000);
+  useEffect(() => {
+    if (!mainArea.current) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width > 0) setMainAreaWidth(entry.contentRect.width);
+    });
+    observer.observe(mainArea.current);
+    return () => observer.disconnect();
+  }, []);
+  const maxMonitorWidth = Math.max(240, Math.min(1000, mainAreaWidth - 240));
+  const actualMonitorWidth = Math.min(workspace.monitorWidth, maxMonitorWidth);
   const [ready, setReady] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -117,6 +131,7 @@ export default function App() {
     undefined,
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [monitorMode, setMonitorMode] = useState<"docked" | "opening" | "detached">("docked");
   const [palette, setPalette] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
   const [panel, setPanel] = useState("files");
@@ -158,6 +173,69 @@ export default function App() {
       kind === "error" ? 10000 : 5000,
     );
   }, []);
+  function monitorContext(): MonitorWindowContext {
+    return {
+      session: active && !active.local && active.status === "connected"
+        ? { id: active.id, name: active.name } : null,
+      theme: settings.theme,
+      monitorInterval: settings.monitorInterval,
+      language: locale,
+    };
+  }
+  async function detachMonitor() {
+    if (!native || monitorMode !== "docked") return;
+    // Stop docked sampling before creating the separate native monitor window.
+    setMonitorMode("opening");
+    try {
+      await api("monitor_window_open", { context: monitorContext() });
+      setMonitorMode("detached");
+    } catch (e) {
+      setMonitorMode("docked");
+      notify(errorText(e), "error");
+    }
+  }
+  async function dockMonitor() {
+    try {
+      await api("monitor_window_dock");
+      setMonitorMode("docked");
+      setWorkspace((w) => ({ ...w, monitorVisible: true }));
+    } catch (e) {
+      notify(errorText(e), "error");
+    }
+  }
+  useEffect(() => {
+    if (!native) return;
+    let disposed = false;
+    void api<boolean>("monitor_window_is_open").then((open) => {
+      if (!disposed && open === true) setMonitorMode("detached");
+    }).catch(() => {});
+    return () => { disposed = true; };
+  }, []);
+  useEffect(() => {
+    if (!native || monitorMode !== "detached" || !ready) return;
+    // Follow the active SSH tab and saved visual preferences without any
+    // additional server login or terminal connection.
+    void api("monitor_window_update", { context: monitorContext() }).catch((e) => notify(errorText(e), "error"));
+  }, [monitorMode, ready, active?.id, active?.name, active?.status, active?.local, settings.theme, settings.monitorInterval, locale, notify]);
+  useEffect(() => {
+    if (monitorMode !== "detached") return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    async function check() {
+      try {
+        const open = await api<boolean>("monitor_window_is_open");
+        if (disposed) return;
+        if (open === false) {
+          setMonitorMode("docked");
+          setWorkspace((w) => ({ ...w, monitorVisible: true }));
+          return;
+        }
+      } catch { /* Keep the current mode on transient IPC failures. */ }
+      if (!disposed) timer = setTimeout(check, 750);
+    }
+    void check();
+    return () => { disposed = true; clearTimeout(timer); };
+  }, [monitorMode]);
   const reloadHosts = useCallback(async () => {
     setHosts(await api<Host[]>("hosts_list"));
   }, []);
@@ -177,6 +255,11 @@ export default function App() {
           ...w,
           sidebarWidth: Math.min(360, Math.max(196, w.sidebarWidth || 236)),
           filesHeight: Math.min(560, Math.max(180, w.filesHeight || 326)),
+          monitorWidth: clampWidth(w.monitorWidth, defaultWorkspace.monitorWidth, 240, 1000),
+          fileTreeWidth: clampWidth(w.fileTreeWidth, defaultWorkspace.fileTreeWidth, 120, 700),
+          fileColumnWidths: defaultWorkspace.fileColumnWidths.map((fallback, i) =>
+            clampWidth(Array.isArray(w.fileColumnWidths) ? w.fileColumnWidths[i] : undefined,
+              fallback, [120, 64, 64, 112, 90, 78][i], 1400)),
         });
         restoreRef.current = w.hostIds || [];
         setReady(true);
@@ -866,7 +949,7 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark">›_</span>
           <strong>Shell EX</strong>
-          <span className="version-tag">0.4.6</span>
+          <span className="version-tag">0.4.7</span>
         </div>
         {macTitlebar && <div className="titlebar-drag" data-tauri-drag-region="" aria-hidden="true" />}
         <div className="header-actions">
@@ -1125,7 +1208,7 @@ export default function App() {
               <Maximize2 size={14} />
             </IconButton>
           </div>
-          <div className="workspace-main">
+          <div className="workspace-main" ref={mainArea}>
             <section className="terminal-column">
               {bootError && <ErrorBox message={bootError} />}
               <div
@@ -1182,8 +1265,15 @@ export default function App() {
                 )}
               </div>
             </section>
-            {workspace.monitorVisible && (
+            {workspace.monitorVisible && monitorMode === "docked" && (
+              <>
+              <ResizeHandle label={tr("调整监控面板宽度")} value={actualMonitorWidth}
+                min={240} max={maxMonitorWidth} direction={-1}
+                onChange={(width) => setWorkspace((w) => ({ ...w, monitorWidth: width }))}
+                onReset={() => setWorkspace((w) => ({ ...w, monitorWidth: defaultWorkspace.monitorWidth }))} />
               <MonitorPanel
+                width={actualMonitorWidth}
+                onDetach={native ? () => void detachMonitor() : undefined}
                 session={active}
                 settings={settings}
                 notify={notify}
@@ -1191,6 +1281,7 @@ export default function App() {
                   setWorkspace((w) => ({ ...w, monitorVisible: false }))
                 }
               />
+              </>
             )}
           </div>
               {workspace.filesVisible && (
@@ -1254,6 +1345,12 @@ export default function App() {
                           session={active}
                           notify={notify}
                           onTransfer={() => setPanel("transfers")}
+                          treeWidth={workspace.fileTreeWidth}
+                          columnWidths={workspace.fileColumnWidths}
+                          onTreeWidth={(width) => setWorkspace((w) => ({ ...w, fileTreeWidth: width }))}
+                          onColumnWidth={(index, width) => setWorkspace((w) => ({
+                            ...w, fileColumnWidths: w.fileColumnWidths.map((v, i) => i === index ? width : v),
+                          }))}
                         />
                       </div>
                       {panel === "transfers" && (
@@ -1314,11 +1411,13 @@ export default function App() {
             <PanelBottom size={13} />
           </IconButton>
           <IconButton
-            title={tr("显示监控面板")}
-            active={workspace.monitorVisible}
-            onClick={() =>
-              setWorkspace((w) => ({ ...w, monitorVisible: !w.monitorVisible }))
-            }
+            title={monitorMode === "detached" ? tr("停靠监控面板") : tr("显示监控面板")}
+            active={workspace.monitorVisible || monitorMode === "detached"}
+            disabled={monitorMode === "opening"}
+            onClick={() => {
+              if (monitorMode === "detached") void dockMonitor();
+              else setWorkspace((w) => ({ ...w, monitorVisible: !w.monitorVisible }));
+            }}
           >
             <PanelRight size={13} />
           </IconButton>
