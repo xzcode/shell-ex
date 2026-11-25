@@ -51,7 +51,7 @@ import type {
   TerminalEvent,
   Workspace,
 } from "./types";
-import { defaultSettings, defaultWorkspace, credentialStoreForHost } from "./types";
+import { defaultSettings, defaultWorkspace, credentialStoreForHost, transferColumnMinimums } from "./types";
 import { api, confirmAction, errorText, native } from "./api";
 import { Busy, ErrorBox, Field, IconButton, Modal, Toggle } from "./ui";
 import { HostDialog, TrustDialog } from "./HostDialog";
@@ -260,6 +260,9 @@ export default function App() {
           fileColumnWidths: defaultWorkspace.fileColumnWidths.map((fallback, i) =>
             clampWidth(Array.isArray(w.fileColumnWidths) ? w.fileColumnWidths[i] : undefined,
               fallback, [120, 64, 64, 112, 90, 78][i], 1400)),
+          transferColumnWidths: defaultWorkspace.transferColumnWidths.map((fallback, i) =>
+            clampWidth(Array.isArray(w.transferColumnWidths) ? w.transferColumnWidths[i] : undefined,
+              fallback, transferColumnMinimums[i], 1400)),
         });
         restoreRef.current = w.hostIds || [];
         setReady(true);
@@ -949,7 +952,7 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark">›_</span>
           <strong>Shell EX</strong>
-          <span className="version-tag">0.4.8</span>
+          <span className="version-tag">0.4.9</span>
         </div>
         {macTitlebar && <div className="titlebar-drag" data-tauri-drag-region="" aria-hidden="true" />}
         <div className="header-actions">
@@ -1354,7 +1357,11 @@ export default function App() {
                         />
                       </div>
                       {panel === "transfers" && (
-                        <TransferPanel notify={notify} />
+                        <TransferPanel notify={notify}
+                          columnWidths={workspace.transferColumnWidths}
+                          onColumnWidth={(index, width) => setWorkspace((w) => ({
+                            ...w, transferColumnWidths: w.transferColumnWidths.map((v, i) => i === index ? width : v),
+                          }))} />
                       )}
                       {panel === "snippets" && (
                         <SnippetPanel session={active} notify={notify} />

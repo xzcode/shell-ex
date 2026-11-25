@@ -151,6 +151,7 @@ export type Workspace = {
   monitorWidth: number;
   fileTreeWidth: number;
   fileColumnWidths: number[];
+  transferColumnWidths: number[];
   monitorVisible: boolean;
   filesVisible: boolean;
   split: "none" | "horizontal" | "vertical";
@@ -175,6 +176,7 @@ export const defaultSettings: AppSettings = {
   confirmMultilinePaste: true,
   autoReconnect: false,
 };
+export const transferColumnMinimums = [150, 100, 72, 80, 88] as const;
 export const defaultWorkspace: Workspace = {
   hostIds: [],
   activeHostId: null,
@@ -183,6 +185,7 @@ export const defaultWorkspace: Workspace = {
   monitorWidth: 365,
   fileTreeWidth: 210,
   fileColumnWidths: [280, 100, 92, 160, 132, 116],
+  transferColumnWidths: [340, 220, 96, 104, 100],
   monitorVisible: true,
   filesVisible: true,
   split: "none",

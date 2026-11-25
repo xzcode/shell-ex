@@ -33,7 +33,14 @@ import type {
 import { api, bytes, confirmAction, errorText } from "./api";
 import { Busy, Empty, ErrorBox, Field, IconButton, Modal } from "./ui";
 import { sendTerminalInput } from "./terminalInput";
-export function TransferPanel({ notify }: { notify: Notify }) {
+import { ResizeHandle } from "./ResizeHandle";
+import { defaultWorkspace, transferColumnMinimums } from "./types";
+export function TransferPanel({ notify, columnWidths, onColumnWidth }: {
+  notify: Notify;
+  columnWidths: number[];
+  onColumnWidth: (index: number, width: number) => void;
+}) {
+  const columnLabels = ["文件 / 方向", "进度", "速度", "状态", "操作"];
   const [tasks, setTasks] = useState<Transfer[]>([]);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [opening, setOpening] = useState<Set<string>>(new Set());
@@ -136,14 +143,26 @@ export function TransferPanel({ notify }: { notify: Notify }) {
       </div>
       {tasks.length ? (
         <div className="scroll-area">
-          <table className="transfer-table transfer-table-local-actions">
+          <table className="transfer-table transfer-table-local-actions resizable-transfer-table"
+            style={{ minWidth: columnWidths.reduce((sum, width) => sum + width, 0) }}>
+            <colgroup>
+              {columnWidths.map((width, i) => <col key={i} style={{ width }} />)}
+              <col />
+            </colgroup>
             <thead>
               <tr>
-                <th>{tr("文件 / 方向")}</th>
-                <th>{tr("进度")}</th>
-                <th>{tr("速度")}</th>
-                <th>{tr("状态")}</th>
-                <th>{tr("操作")}</th>
+                {columnLabels.map((label, index) => (
+                  <th key={label} className="resizable-transfer-heading" title={tr(label)}>
+                    <div className="file-heading-content">
+                      <span>{tr(label)}</span>
+                      <ResizeHandle column label={tr("调整列宽：{0}", tr(label))}
+                        value={columnWidths[index]} min={transferColumnMinimums[index]} max={1400}
+                        onChange={(width) => onColumnWidth(index, width)}
+                        onReset={() => onColumnWidth(index, defaultWorkspace.transferColumnWidths[index])} />
+                    </div>
+                  </th>
+                ))}
+                <th className="transfer-table-filler" aria-hidden="true" />
               </tr>
             </thead>
             <tbody>
@@ -237,6 +256,7 @@ export function TransferPanel({ notify }: { notify: Notify }) {
                         )}
                       </div>
                     </td>
+                    <td className="transfer-table-filler" aria-hidden="true" />
                   </tr>
                 );
               })}

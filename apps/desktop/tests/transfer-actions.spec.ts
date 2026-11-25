@@ -19,7 +19,12 @@ test("default webview context menu is suppressed; completed downloads expose loc
       transformCallback: () => ++callback, unregisterCallback: () => {},
       invoke: async (cmd: string, args: Record<string, unknown> = {}) => {
         if (cmd === "hosts_list" || cmd === "snippets_list") return [];
-        if (cmd === "settings_get" || cmd === "workspace_get") return {};
+        if (cmd === "settings_get") return {};
+        if (cmd === "workspace_get") return JSON.parse(localStorage.getItem("transfer-fixture-workspace") || "{}");
+        if (cmd === "workspace_save") {
+          localStorage.setItem("transfer-fixture-workspace", JSON.stringify(args.workspace));
+          return args.workspace;
+        }
         if (cmd === "monitor_window_is_open") return false;
         if (cmd === "transfers_list") return tasks;
         if (cmd === "plugin:event|listen") return ++callback;
@@ -40,6 +45,24 @@ test("default webview context menu is suppressed; completed downloads expose loc
   await page.getByRole("button", { name: "传输", exact: true }).click();
   const row = page.locator('[data-transfer-id="finished"]');
   await expect(row).toContainText("local report.xlsx");
+  const columns = page.locator(".resizable-transfer-heading");
+  await expect(columns).toHaveCount(5);
+  const handle = page.getByRole("separator", { name: "调整列宽：文件 / 方向", exact: true });
+  const before = await Promise.all([0, 1, 2, 3, 4].map(async (i) => (await columns.nth(i).boundingBox())!.width));
+  const bounds = (await handle.boundingBox())!;
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width / 2 + 75, bounds.y + bounds.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await columns.first().boundingBox())!.width)).toBe(Math.round(before[0] + 75));
+  for (let i = 1; i < 5; i++)
+    expect(Math.abs((await columns.nth(i).boundingBox())!.width - before[i])).toBeLessThanOrEqual(1);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("transfer-fixture-workspace") || "{}").transferColumnWidths?.[0])).toBe(415);
+  await page.reload();
+  await page.getByRole("button", { name: "传输", exact: true }).click();
+  await expect.poll(async () => Math.round((await columns.first().boundingBox())!.width)).toBe(415);
+  await handle.dblclick();
+  await expect.poll(async () => Math.round((await columns.first().boundingBox())!.width)).toBe(340);
   await row.getByRole("button", { name: "在文件夹中显示", exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as any).__transferActions)).toEqual([{ id: "finished", action: "reveal" }]);
   await row.locator(".transfer-name").click({ button: "right" });

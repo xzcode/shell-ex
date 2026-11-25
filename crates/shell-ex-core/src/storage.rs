@@ -403,6 +403,11 @@ pub fn validate_workspace(w: &Workspace) -> Result<()> {
         || w.file_column_widths
             .iter()
             .any(|v| !(56.0..=1400.0).contains(v))
+        || w.transfer_column_widths.len() != 5
+        || w.transfer_column_widths
+            .iter()
+            .zip([150.0, 100.0, 72.0, 80.0, 88.0])
+            .any(|(v, min)| !(min..=1400.0).contains(v))
     {
         return Err(AppError::new(
             "INVALID_WORKSPACE",
@@ -437,6 +442,10 @@ mod tests {
             previous.file_column_widths,
             vec![280.0, 100.0, 92.0, 160.0, 132.0, 116.0]
         );
+        assert_eq!(
+            previous.transfer_column_widths,
+            vec![340.0, 220.0, 96.0, 104.0, 100.0]
+        );
         assert_eq!(previous.file_tree_width, 210.0);
         assert_eq!(previous.monitor_width, 365.0);
         assert!(super::validate_workspace(&previous).is_ok());
@@ -444,12 +453,17 @@ mod tests {
         changed.file_tree_width = 350.0;
         changed.monitor_width = 520.0;
         changed.file_column_widths[0] = 410.0;
+        changed.transfer_column_widths[0] = 460.0;
         assert!(super::validate_workspace(&changed).is_ok());
         let roundtrip: crate::models::Workspace =
             serde_json::from_str(&serde_json::to_string(&changed).unwrap()).unwrap();
         assert_eq!(roundtrip.file_column_widths[0], 410.0);
+        assert_eq!(roundtrip.transfer_column_widths[0], 460.0);
         assert_eq!(roundtrip.monitor_width, 520.0);
         assert_eq!(roundtrip.file_tree_width, 350.0);
+        let mut invalid = changed.clone();
+        invalid.transfer_column_widths[4] = 30.0;
+        assert!(super::validate_workspace(&invalid).is_err());
         changed.file_column_widths.pop();
         assert!(super::validate_workspace(&changed).is_err());
     }

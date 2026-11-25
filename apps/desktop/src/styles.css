@@ -2993,3 +2993,21 @@ body.shell-resizing, body.shell-resizing * {
 .transfer-table-local-actions { min-width: 580px; }
 .transfer-table-local-actions th:last-child { width: 74px; }
 .transfer-table-local-actions .row-actions { flex-wrap: nowrap; }
+
+/* Transfer records have their own persisted widths. A trailing filler column
+   consumes only spare space, so resizing one real column leaves the others
+   unchanged even on a very wide window. */
+.transfer-table-local-actions.resizable-transfer-table {
+  width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0;
+}
+.resizable-transfer-table .resizable-transfer-heading { padding: 0; overflow: hidden; }
+.resizable-transfer-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resizable-transfer-table .transfer-table-filler { width: auto; padding: 0; }
+.resizable-transfer-table .progress-cell { min-width: 0; width: auto; }
+.resizable-transfer-table .transfer-name { min-width: 0; }
+.resizable-transfer-table .transfer-name > svg { flex-shrink: 0; }
+.resizable-transfer-table .transfer-name > div { min-width: 0; flex: 1; }
+.resizable-transfer-table .transfer-name strong,
+.resizable-transfer-table .transfer-name small { max-width: none; }
+.resizable-transfer-table .row-actions { white-space: nowrap; }
+.resizable-transfer-table .row-actions .icon-button { flex-shrink: 0; }
