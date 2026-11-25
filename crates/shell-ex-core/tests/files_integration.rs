@@ -367,3 +367,81 @@ async fn directory_plan_is_read_only_rechecks_sources_and_skips_links() {
     }
     ssh.disconnect(&session).await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires isolated ssh fixture and GNU tar"]
+async fn file_menu_archive_recursive_delete_and_no_overwrite() {
+    let root = std::env::var("SHELL_EX_TEST_ROOT").unwrap();
+    let directory = tempfile::tempdir_in(root).unwrap();
+    let path = |name: &str| directory.path().join(name).to_string_lossy().into_owned();
+    let (ssh, session) = connection().await;
+    let files = FileService::new(ssh.clone());
+    let source = path("a 'quoted'.txt");
+    let nested = path("--nested");
+    files.create_file(&session, &source).await.unwrap();
+    assert!(files.create_file(&session, &source).await.is_err());
+    std::fs::write(&source, b"original remote content").unwrap();
+    files.mkdir(&session, &nested).await.unwrap();
+    let child = format!("{nested}/child.txt");
+    files.create_file(&session, &child).await.unwrap();
+    std::fs::write(&child, b"child content").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&source, format!("{nested}/outside-link")).unwrap();
+
+    let manager = TransferManager::new(ssh.clone(), 1);
+    let occupied = path("local-existing.txt");
+    std::fs::write(&occupied, b"keep local").unwrap();
+    assert!(manager
+        .start(
+            session.clone(),
+            "download".into(),
+            occupied.clone(),
+            source.clone(),
+            false
+        )
+        .await
+        .is_err());
+    assert!(manager
+        .start(
+            session.clone(),
+            "download".into(),
+            occupied.clone(),
+            source.clone(),
+            true
+        )
+        .await
+        .is_err());
+    assert_eq!(std::fs::read(&occupied).unwrap(), b"keep local");
+
+    let dest = path("archive.tar.gz");
+    let transfer = manager
+        .start_archive_download(
+            session.clone(),
+            vec![source.clone(), nested.clone()],
+            dest.clone(),
+        )
+        .await
+        .unwrap();
+    let item = wait_for(&manager, &transfer.id, &["completed", "failed"]).await;
+    assert_eq!(item.status, "completed", "{item:?}");
+    assert!(item.error.is_none(), "{item:?}");
+    assert!(!std::path::Path::new(&transfer.remote_path).exists());
+    assert!(!std::path::Path::new(&transfer.remote_path)
+        .parent()
+        .unwrap()
+        .exists());
+    let listing = std::process::Command::new("tar")
+        .args(["-tzf", &dest])
+        .output()
+        .unwrap();
+    assert!(listing.status.success());
+    let listing = String::from_utf8_lossy(&listing.stdout);
+    assert!(listing.contains("a 'quoted'.txt"), "{listing}");
+    assert!(listing.contains("--nested/child.txt"), "{listing}");
+
+    files.remove_tree(&session, &nested).await.unwrap();
+    assert!(!std::path::Path::new(&nested).exists());
+    assert_eq!(std::fs::read(&source).unwrap(), b"original remote content");
+    assert_eq!(std::fs::read(&occupied).unwrap(), b"keep local");
+    ssh.disconnect(&session).await.unwrap();
+}

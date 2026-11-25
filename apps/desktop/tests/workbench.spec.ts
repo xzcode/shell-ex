@@ -176,5 +176,12 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
     path: info.outputPath("workbench-compact.png"),
     fullPage: true,
   });
+  await page.getByRole("button", { name: "设置 ⌘,", exact: true }).click();
+  await page.getByRole("dialog", { name: "设置", exact: true }).getByRole("button", { name: /纯黑/ }).click();
+  await page.getByRole("button", { name: "保存设置", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "black");
+  await expect(page.locator(".terminal-area")).toHaveCSS("background-color", "rgb(0, 0, 0)");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "black");
   expect(errors).toEqual([]);
 });

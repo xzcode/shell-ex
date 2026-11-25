@@ -23,6 +23,19 @@ self.MonacoEnvironment = {
   },
 };
 loader.config({ monaco });
+monaco.editor.defineTheme("shell-ex-black", {
+  base: "vs-dark",
+  inherit: true,
+  rules: [],
+  colors: {
+    "editor.background": "#000000",
+    "editor.foreground": "#e6e6e6",
+    "editorGutter.background": "#000000",
+    "editorLineNumber.foreground": "#858585",
+    "editor.lineHighlightBackground": "#191919",
+    "editor.selectionBackground": "#ffffff30",
+  },
+});
 function language(path: string) {
   const extension = path.split(".").pop()?.toLowerCase() || "";
   return (
@@ -54,11 +67,13 @@ function language(path: string) {
 export default function RemoteEditor({
   sessionId,
   path,
+  plainText = false,
   notify,
   onClose,
 }: {
   sessionId: string;
   path: string;
+  plainText?: boolean;
   notify: Notify;
   onClose: () => void;
 }) {
@@ -188,12 +203,12 @@ export default function RemoteEditor({
         {file ? (
           <Editor
             height="100%"
-            language={language(targetPath)}
+            language={plainText ? "plaintext" : language(targetPath)}
             value={text}
             theme={
               ["light", "mist"].includes(document.documentElement.dataset.theme || "")
                 ? "vs"
-                : "vs-dark"
+                : document.documentElement.dataset.theme === "black" ? "shell-ex-black" : "vs-dark"
             }
             onChange={(value) => setText(value || "")}
             options={{

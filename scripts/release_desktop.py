@@ -31,7 +31,7 @@ def version():
 
 
 def gh(*args):
-    return subprocess.check_output(["gh", *args], text=True, cwd=ROOT)
+    return subprocess.check_output(["gh", *args], encoding="utf-8", cwd=ROOT)
 
 
 def api(endpoint):

@@ -747,6 +747,38 @@ async fn sftp_mkdir(state: State<'_, AppState>, session_id: String, path: String
     state.files.mkdir(&session_id, &path).await
 }
 #[tauri::command]
+async fn sftp_create_file(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+) -> Result<()> {
+    state.files.create_file(&session_id, &path).await
+}
+#[tauri::command]
+async fn sftp_remove_tree(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+) -> Result<()> {
+    state.files.remove_tree(&session_id, &path).await
+}
+#[tauri::command]
+async fn download_destination_exists(path: String) -> Result<bool> {
+    TransferManager::download_destination_exists(&path).await
+}
+#[tauri::command]
+async fn transfer_start_archive(
+    state: State<'_, AppState>,
+    session_id: String,
+    paths: Vec<String>,
+    local_path: String,
+) -> Result<Transfer> {
+    state
+        .transfers
+        .start_archive_download(session_id, paths, local_path)
+        .await
+}
+#[tauri::command]
 async fn sftp_rename(
     state: State<'_, AppState>,
     session_id: String,
@@ -1118,6 +1150,10 @@ pub fn run() {
             sftp_realpath,
             sftp_list,
             sftp_mkdir,
+            sftp_create_file,
+            sftp_remove_tree,
+            download_destination_exists,
+            transfer_start_archive,
             sftp_rename,
             sftp_remove,
             sftp_chmod,

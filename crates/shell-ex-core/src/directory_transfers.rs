@@ -307,6 +307,11 @@ impl TransferManager {
                     "Directory plan expired or was already started; scan the directory again",
                 )
             })?;
+        let conflict = if plan.summary.direction == "download" {
+            "skip"
+        } else {
+            conflict
+        };
         if plan.created.elapsed() > PLAN_LIFETIME {
             return Err(AppError::new(
                 "PLAN_EXPIRED",

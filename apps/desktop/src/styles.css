@@ -28,6 +28,35 @@
   --selected: #394d65;
   --overlay: #090e15b8;
 }
+/* A neutral black workbench; no navy or tinted dark surfaces. */
+:root[data-theme="black"] {
+  color-scheme: dark;
+  --bg: #000000;
+  --panel: #101010;
+  --panel-alt: #181818;
+  --terminal: #000000;
+  --hover: #262626;
+  --border: #393939;
+  --border-soft: #242424;
+  --text: #ededed;
+  --secondary: #cccccc;
+  --muted: #a0a0a0;
+  --accent: #dedede;
+  --accent-strong: #b9b9b9;
+  --accent-bg: #ffffff1a;
+  --green: #82d5a2;
+  --amber: #e0ba73;
+  --red: #f09b9b;
+  --shadow: 0 24px 90px #000b;
+  --input: #141414;
+  --selected: #303030;
+  --overlay: #000000b8;
+}
+:root[data-theme="black"] .button.primary { color:#111; }
+:root[data-theme="black"] .terminal-font-preview { background:#000; color:#ededed; }
+.theme-card.black .theme-mini { background:#000; border-color:#494949; }
+.theme-card.black .theme-mini > span { background:#171717; border-color:#424242; }
+.theme-card.black .theme-mini i { background:#bdbdbd; }
 :root[data-theme="light"] {
   --bg: #f2f5f9;
   --panel: #fff;
@@ -2639,3 +2668,27 @@ select:not([multiple]) {
 .auth-settings h4 svg { color:var(--accent); }
 .credential-mode { display:flex; flex-direction:column; gap:8px; }
 .credential-mode-hint { color:var(--muted); font-size:10px; line-height:1.65; margin:0; }
+
+/* File manager context menu, shared theme variables across all palettes. */
+.file-context-menu {
+  position: fixed; z-index: 90;
+  width: 240px; max-width: calc(100vw - 12px);
+  overflow: auto; padding: 4px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 5px; box-shadow: 0 8px 26px #0006;
+}
+.file-context-menu button {
+  width: 100%; min-height: 29px; padding: 5px 9px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  text-align: left; font-size: 12px; border-radius: 3px;
+  color: var(--text);
+}
+.file-context-menu button:not(:disabled):hover,
+.file-context-menu button:focus-visible { background: var(--hover); }
+.file-context-menu button:disabled { opacity: .42; }
+.file-context-menu .menu-danger { color: var(--red); }
+.file-context-menu .menu-divider {
+  height: 1px; background: var(--border-soft); margin: 4px 2px;
+}
+.file-context-menu .file-submenu { padding-left: 14px; }
+.file-context-menu .file-submenu button { font-size: 11px; }

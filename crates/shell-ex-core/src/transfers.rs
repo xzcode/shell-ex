@@ -7,7 +7,7 @@ use crate::{
         atomic_replace, join_remote, optional_metadata, sftp_error, temporary_remote_path,
         valid_mutation_path,
     },
-    ssh::SshManager,
+    ssh::{shell_quote, SshManager},
 };
 use russh_sftp::{
     client::SftpSession,
@@ -74,6 +74,7 @@ struct Task {
     baseline: Mutex<Option<Baseline>>,
     control: watch::Sender<Control>,
     overwrite: bool,
+    archive_dir: Option<String>,
 }
 struct Inner {
     ssh: Arc<SshManager>,
@@ -123,10 +124,49 @@ impl TransferManager {
         remote_path: String,
         overwrite: bool,
     ) -> Result<Transfer> {
+        self.start_owned(
+            session_id,
+            direction,
+            local_path,
+            remote_path,
+            overwrite,
+            None,
+        )
+        .await
+    }
+
+    /// Downloads always use atomic no-replace publication. Existing files,
+    /// including symbolic links, are never implicitly overwritten.
+    pub async fn download_destination_exists(local_path: &str) -> Result<bool> {
+        let path = Path::new(local_path);
+        if !path.is_absolute() || path.file_name().is_none() || local_path.contains('\0') {
+            return Err(AppError::new(
+                "INVALID_LOCAL_PATH",
+                "Choose an absolute local file path",
+            ));
+        }
+        Ok(local_metadata(local_path).await?.is_some())
+    }
+
+    async fn start_owned(
+        &self,
+        session_id: String,
+        direction: String,
+        local_path: String,
+        remote_path: String,
+        overwrite: bool,
+        archive_dir: Option<String>,
+    ) -> Result<Transfer> {
         if direction != "upload" && direction != "download" {
             return Err(AppError::new(
                 "INVALID_DIRECTION",
                 "Choose upload or download",
+            ));
+        }
+        if direction == "download" && overwrite {
+            return Err(AppError::new(
+                "DOWNLOAD_OVERWRITE_DISABLED",
+                "Downloads never overwrite existing local files",
             ));
         }
         valid_mutation_path(&remote_path)?;
@@ -166,6 +206,9 @@ impl TransferManager {
                 )
             })?
             .to_owned();
+        if direction == "download" && local_metadata(&normalized_string).await?.is_some() {
+            return Err(destination_exists());
+        }
         let mut tasks = self.inner.tasks.lock().await;
         if tasks.len() >= MAX_TASKS {
             prune_completed_tasks(&mut tasks);
@@ -211,6 +254,7 @@ impl TransferManager {
             baseline: Mutex::new(None),
             control,
             overwrite,
+            archive_dir,
         });
         tasks.insert(record.id.clone(), task.clone());
         drop(tasks);
@@ -219,6 +263,121 @@ impl TransferManager {
             manager.worker(task, receiver).await;
         });
         Ok(record)
+    }
+    /// Create a private remote archive of selected siblings, then queue a
+    /// normal verified download. Paths are quoted as literal shell arguments.
+    /// Only the owned temporary archive is cleaned up, never source entries.
+    pub async fn start_archive_download(
+        &self,
+        session_id: String,
+        paths: Vec<String>,
+        local_path: String,
+    ) -> Result<Transfer> {
+        if Self::download_destination_exists(&local_path).await? {
+            return Err(destination_exists());
+        }
+        let (parent, names) = archive_selection(&paths)?;
+        let sftp = self.inner.ssh.sftp(&session_id).await?;
+        if sftp.canonicalize(&parent).await.map_err(sftp_error)? != parent {
+            return Err(AppError::new(
+                "INVALID_ARCHIVE_SELECTION",
+                "Select files in a canonical directory",
+            ));
+        }
+        for path in &paths {
+            let meta = sftp.symlink_metadata(path).await.map_err(sftp_error)?;
+            if !meta.file_type().is_file() && !meta.file_type().is_dir() {
+                return Err(AppError::new(
+                    "INVALID_ARCHIVE_SELECTION",
+                    "Select regular files or directories, not links or special files",
+                ));
+            }
+        }
+        let directory = format!("/tmp/.shell-ex-pack-{}", Uuid::new_v4());
+        let archive = join_remote(&directory, "archive.tar.gz");
+        let command = format!(
+            "umask 077; TAR_OPTIONS= tar --one-file-system -czf {} -C {} -- {}",
+            shell_quote(&archive),
+            shell_quote(&parent),
+            names
+                .iter()
+                .map(|name| shell_quote(name))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+        if command.len() > 60_000 {
+            return Err(AppError::new(
+                "INVALID_ARCHIVE_SELECTION",
+                "Selection exceeds the archive command size limit",
+            ));
+        }
+        let created = self
+            .inner
+            .ssh
+            .exec(
+                &session_id,
+                &format!("mkdir -m 700 -- {}", shell_quote(&directory)),
+            )
+            .await?;
+        if created.status != 0 {
+            return Err(AppError::new("ARCHIVE_CREATE_FAILED", created.stderr));
+        }
+        let result = async {
+            let packed = self
+                .inner
+                .ssh
+                .exec_with_timeout(&session_id, &command, std::time::Duration::from_secs(300))
+                .await?;
+            if packed.status != 0 {
+                return Err(AppError::new("ARCHIVE_CREATE_FAILED", packed.stderr));
+            }
+            self.start_owned(
+                session_id.clone(),
+                "download".into(),
+                local_path,
+                archive.clone(),
+                false,
+                Some(directory.clone()),
+            )
+            .await
+        }
+        .await;
+        if let Err(error) = result {
+            if let Err(cleanup) = self.remove_archive(&session_id, &directory).await {
+                return Err(AppError::new(
+                    "ARCHIVE_CLEANUP_FAILED",
+                    format!(
+                        "{}; temporary archive cleanup failed at {}: {}",
+                        error.message, directory, cleanup.message
+                    ),
+                ));
+            }
+            return Err(error);
+        }
+        result
+    }
+
+    async fn remove_archive(&self, session_id: &str, directory: &str) -> Result<()> {
+        let sftp = self.inner.ssh.sftp(session_id).await?;
+        let archive = join_remote(directory, "archive.tar.gz");
+        if optional_metadata(&sftp, &archive).await?.is_some() {
+            sftp.remove_file(archive).await.map_err(sftp_error)?;
+        }
+        sftp.remove_dir(directory).await.map_err(sftp_error)
+    }
+
+    async fn cleanup_archive(&self, task: &Task) -> Option<String> {
+        let directory = task.archive_dir.as_ref()?;
+        let session_id = task.record.lock().await.session_id.clone();
+        self.remove_archive(&session_id, directory)
+            .await
+            .err()
+            .map(|error| {
+                format!(
+                    "Temporary archive cleanup failed at {directory}: {}",
+                    error.message
+                )
+            })
     }
     pub async fn list(&self) -> Vec<Transfer> {
         let tasks: Vec<_> = self.inner.tasks.lock().await.values().cloned().collect();
@@ -322,7 +481,12 @@ impl TransferManager {
         loop {
             let requested = *control.borrow_and_update();
             if requested == Control::Cancel {
-                let cleanup_error = self.cleanup(&task).await;
+                let partial_error = self.cleanup(&task).await;
+                let archive_error = self.cleanup_archive(&task).await;
+                let cleanup_error = match (partial_error, archive_error) {
+                    (Some(a), Some(b)) => Some(format!("{a}; {b}")),
+                    (a, b) => a.or(b),
+                };
                 set_state(&task, "cancelled", cleanup_error).await;
                 return;
             }
@@ -343,7 +507,8 @@ impl TransferManager {
             drop(slot);
             match result {
                 Ok(()) => {
-                    set_state(&task, "completed", None).await;
+                    let cleanup_error = self.cleanup_archive(&task).await;
+                    set_state(&task, "completed", cleanup_error).await;
                     return;
                 }
                 Err(e) if e.code == "TRANSFER_PAUSED" || e.code == "TRANSFER_CANCELLED" => continue,
@@ -444,21 +609,9 @@ impl TransferManager {
                 AppError::new("MISSING_FILE_SIZE", "Server did not report the file size")
             })?;
             let destination = local_metadata(&item.local_path).await?;
-            if let Some(meta) = &destination {
-                if local_is_link(meta) || !meta.is_file() {
-                    return Err(AppError::new(
-                        "UNSAFE_DESTINATION",
-                        "Destination must be a regular file",
-                    ));
-                }
-                if !overwrite {
-                    return Err(destination_exists());
-                }
+            if destination.is_some() {
+                return Err(destination_exists());
             }
-            let destination_hash = match destination.as_ref() {
-                Some(meta) => Some(hash_local(&item.local_path, meta.len(), control).await?),
-                None => None,
-            };
             let source_hash = hash_remote(sftp, &item.remote_path, total, control).await?;
             if remote_signature(
                 &sftp
@@ -482,8 +635,8 @@ impl TransferManager {
                 source_signature: remote_signature(&remote),
                 source_hash,
                 total,
-                destination_signature: destination.as_ref().map(local_signature),
-                destination_hash,
+                destination_signature: None,
+                destination_hash: None,
                 destination_attributes: None,
                 partial: partial.to_string_lossy().into_owned(),
             })
@@ -664,31 +817,11 @@ impl TransferManager {
                 "Downloaded bytes did not match the source; original destination is unchanged",
             ));
         }
-        let current = local_metadata(&item.local_path).await?;
-        if current.as_ref().map(local_signature) != baseline.destination_signature {
+        if local_metadata(&item.local_path).await?.is_some() {
             return Err(destination_changed());
         }
-        if let Some(meta) = current.as_ref() {
-            if Some(hash_local(&item.local_path, meta.len(), control).await?)
-                != baseline.destination_hash
-            {
-                return Err(destination_changed());
-            }
-        }
-        if let Some(meta) = current.as_ref() {
-            fs::set_permissions(&baseline.partial, meta.permissions()).await?;
-        }
         begin_commit(task, control).await?;
-        if current.is_none() {
-            // Atomic create-no-replace on the same filesystem; a racing creator wins.
-            fs::hard_link(&baseline.partial, &item.local_path).await.map_err(|error| {
-                AppError::new("ATOMIC_LOCAL_PUBLISH_FAILED", format!(
-                    "Could not publish without overwriting another file. The destination filesystem must support hard links; choose an NTFS/APFS/ext4 directory. Verified partial remains at {}. {error}", baseline.partial))
-            })?;
-            let _ = fs::remove_file(&baseline.partial).await;
-        } else {
-            fs::rename(&baseline.partial, &item.local_path).await?;
-        }
+        publish_download_no_replace(&baseline.partial, &item.local_path).await?;
         #[cfg(unix)]
         {
             if let Some(parent) = Path::new(&item.local_path).parent() {
@@ -728,6 +861,68 @@ impl TransferManager {
         }
         None
     }
+}
+
+fn archive_selection(paths: &[String]) -> Result<(String, Vec<String>)> {
+    if paths.is_empty() || paths.len() > 256 {
+        return Err(AppError::new(
+            "INVALID_ARCHIVE_SELECTION",
+            "Select 1 to 256 files or directories",
+        ));
+    }
+    let mut parent: Option<String> = None;
+    let mut names = Vec::new();
+    for path in paths {
+        valid_mutation_path(path)?;
+        if ["/tmp", "/proc", "/sys", "/dev", "/run"].contains(&path.as_str())
+            || ["/proc/", "/sys/", "/dev/", "/run/"]
+                .iter()
+                .any(|p| path.starts_with(p))
+        {
+            return Err(AppError::new(
+                "INVALID_ARCHIVE_SELECTION",
+                "System mount roots and the archive staging root cannot be packed",
+            ));
+        }
+        if !path.starts_with('/')
+            || path.contains(['\r', '\n'])
+            || path.split('/').any(|p| p == "." || p == "..")
+        {
+            return Err(AppError::new(
+                "INVALID_ARCHIVE_SELECTION",
+                "Select absolute, unambiguous paths",
+            ));
+        }
+        let (dir, name) = path.rsplit_once('/').unwrap();
+        let dir = if dir.is_empty() { "/" } else { dir };
+        if name.is_empty()
+            || parent.as_deref().is_some_and(|p| p != dir)
+            || names.iter().any(|n| n == name)
+        {
+            return Err(AppError::new(
+                "INVALID_ARCHIVE_SELECTION",
+                "Select distinct entries from the same directory",
+            ));
+        }
+        parent = Some(dir.to_owned());
+        names.push(name.to_owned());
+    }
+    Ok((parent.unwrap(), names))
+}
+
+async fn publish_download_no_replace(partial: &str, destination: &str) -> Result<()> {
+    // Atomic create-no-replace on the same filesystem. A racing creator wins.
+    fs::hard_link(partial, destination).await.map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            destination_exists()
+        } else {
+            AppError::new("ATOMIC_LOCAL_PUBLISH_FAILED", format!(
+                "Could not publish without overwriting another file. Choose a filesystem supporting hard links. Verified partial remains at {partial}. {error}"
+            ))
+        }
+    })?;
+    let _ = fs::remove_file(partial).await;
+    Ok(())
 }
 
 async fn begin_commit(task: &Task, control: &watch::Receiver<Control>) -> Result<()> {
@@ -951,7 +1146,7 @@ fn prefix_changed() -> AppError {
 fn destination_exists() -> AppError {
     AppError::new(
         "DESTINATION_EXISTS",
-        "Destination exists. Start again with explicit overwrite permission",
+        "Destination exists. Start again with a different path or explicit upload overwrite permission",
     )
 }
 fn destination_changed() -> AppError {
@@ -972,6 +1167,50 @@ mod tests {
         assert_ne!(a, b);
         assert!(hash_prefix(&mut &b"abc"[..], 4, &receiver).await.is_err());
     }
+    #[tokio::test]
+    async fn local_download_conflict_never_replaces_a_racing_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let part = temp.path().join("verified.part");
+        let dest = temp.path().join("document.xlsx");
+        fs::write(&part, b"downloaded").await.unwrap();
+        let dest_path = dest.to_str().unwrap();
+        assert!(!TransferManager::download_destination_exists(dest_path)
+            .await
+            .unwrap());
+        fs::write(&dest, b"original").await.unwrap();
+        assert!(TransferManager::download_destination_exists(dest_path)
+            .await
+            .unwrap());
+        assert!(
+            publish_download_no_replace(part.to_str().unwrap(), dest_path)
+                .await
+                .is_err()
+        );
+        assert_eq!(fs::read(&dest).await.unwrap(), b"original");
+        assert_eq!(fs::read(&part).await.unwrap(), b"downloaded");
+        fs::remove_file(&dest).await.unwrap();
+        publish_download_no_replace(part.to_str().unwrap(), dest_path)
+            .await
+            .unwrap();
+        assert_eq!(fs::read(&dest).await.unwrap(), b"downloaded");
+        assert!(!part.exists());
+    }
+
+    #[test]
+    fn archive_selection_accepts_literal_siblings_and_rejects_unsafe_paths() {
+        let paths = vec![
+            "/home/test/a 'quoted'.txt".into(),
+            "/home/test/--option".into(),
+        ];
+        let (parent, names) = archive_selection(&paths).unwrap();
+        assert_eq!(parent, "/home/test");
+        assert_eq!(names, vec!["a 'quoted'.txt", "--option"]);
+        assert!(archive_selection(&["/tmp".into()]).is_err());
+        assert!(archive_selection(&["/".into()]).is_err());
+        assert!(archive_selection(&["/home/test/../data".into()]).is_err());
+        assert!(archive_selection(&["/home/test/a".into(), "/home/other/b".into()]).is_err());
+    }
+
     #[test]
     fn overwrite_requires_regular_destination_and_permission() {
         let attrs = FileAttributes {

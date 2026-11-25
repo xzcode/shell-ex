@@ -1,4 +1,5 @@
 import { tr, getLocale } from "./i18n";
+import { createPortal } from "react-dom";
 import {
   lazy,
   Suspense,
@@ -66,8 +67,15 @@ export function FilePanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
+  const [plainEditor, setPlainEditor] = useState(false);
+  const [defaultPlainEditor, setDefaultPlainEditor] = useState(() => {
+    try { return localStorage.getItem("shell-ex-default-text-editor") === "plain"; }
+    catch { return false; }
+  });
+  const [menu, setMenu] = useState<{ x: number; y: number; targets: FileEntry[]; section: "open" | "editor" | "new" | null } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [operation, setOperation] = useState<{
-    kind: "mkdir" | "rename" | "chmod";
+    kind: "mkdir" | "touch" | "rename" | "chmod";
     entry?: FileEntry;
   } | null>(null);
   const [value, setValue] = useState("");
@@ -82,6 +90,7 @@ export function FilePanel({
     skippedLinks: string[];
     localRoot: string;
     remoteRoot: string;
+    direction: "upload" | "download";
   } | null>(null);
   const [conflict, setConflict] = useState<"skip" | "overwrite">("skip");
   const request = useRef(0);
@@ -129,6 +138,7 @@ export function FilePanel({
     setEntries([]);
     setSelected(new Set());
     setEditing(null);
+    setMenu(null);
     setDirectoryPlan(null);
     setOperation(null);
     request.current++;
@@ -140,8 +150,58 @@ export function FilePanel({
     };
   }, [load]);
   function navigate(next: string) {
+    setMenu(null);
     setPath(next || ".");
     setInputPath(next || ".");
+  }
+  useEffect(() => {
+    setMenu(null);
+  }, [path, loading, working]);
+  useEffect(() => {
+    if (!menu) return;
+    const outside = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenu(null);
+    };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenu(null);
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    window.addEventListener("resize", escapeMenu);
+    function escapeMenu() { setMenu(null); }
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+      window.removeEventListener("resize", escapeMenu);
+    };
+  }, [!!menu]);
+  function openEntry(entry: FileEntry, plain = defaultPlainEditor) {
+    if (entry.isDir) navigate(entry.path);
+    else {
+      setPlainEditor(plain);
+      setEditing(entry.path);
+    }
+  }
+  function chooseDefaultEditor(plain: boolean) {
+    setDefaultPlainEditor(plain);
+    try { localStorage.setItem("shell-ex-default-text-editor", plain ? "plain" : "code"); }
+    catch { /* Preference remains available for this session. */ }
+  }
+  function openContext(x: number, y: number, entry?: FileEntry) {
+    if (working || loading) return;
+    const targets = entry
+      ? selected.has(entry.path) ? entries.filter((item) => selected.has(item.path)) : [entry]
+      : [];
+    setSelected(new Set(targets.map((item) => item.path)));
+    setMenu({ x, y, targets, section: null });
+  }
+  async function copyPaths(targets: FileEntry[]) {
+    try {
+      await navigator.clipboard.writeText(targets.length ? targets.map((item) => item.path).join("\n") : path);
+      notify(tr("路径已复制。"), "success");
+    } catch (e) {
+      notify(errorText(e), "error");
+    }
   }
   async function upload(paths?: string[]) {
     if (!remote) return;
@@ -236,7 +296,7 @@ export function FilePanel({
       });
       if (sessionIdentity.current !== remote.id) return;
       setConflict("skip");
-      setDirectoryPlan(plan);
+      setDirectoryPlan({ ...plan, direction });
     } catch (e) {
       notify(errorText(e), "error");
     } finally {
@@ -267,6 +327,18 @@ export function FilePanel({
       setWorking(false);
     }
   }
+  async function chooseDownloadPath(name: string): Promise<string | null> {
+    for (;;) {
+      const destination = await savePath(name);
+      if (!destination) return null;
+      if (!(await api<boolean>("download_destination_exists", { path: destination })))
+        return destination;
+      if (!(await confirmAction(
+        tr("本地文件已存在：{0}。原文件不会被覆盖，是否选择其他保存位置？", destination),
+        tr("选择其他保存位置"),
+      ))) return null;
+    }
+  }
   async function download(entry: FileEntry) {
     if (!remote) return;
     if (entry.isDir) {
@@ -274,19 +346,14 @@ export function FilePanel({
       return;
     }
     try {
-      const destination = await savePath(entry.name);
-      if (!destination) return;
-      const overwrite = await confirmAction(
-        tr("下载到：{0}\n若该路径已有文件，完成后将替换它。", destination),
-        tr("确认下载路径"),
-      );
-      if (!overwrite) return;
+      const destination = await chooseDownloadPath(entry.name);
+      if (!destination || sessionIdentity.current !== remote.id) return;
       await api("transfer_start", {
         sessionId: remote.id,
         direction: "download",
         localPath: destination,
         remotePath: entry.path,
-        overwrite: true,
+        overwrite: false,
       });
       notify(tr("下载已加入传输队列。"), "success");
       onTransfer();
@@ -294,16 +361,55 @@ export function FilePanel({
       notify(errorText(e), "error");
     }
   }
-  async function remove() {
-    if (!remote || !selected.size) return;
-    const targets = entries.filter((f) => selected.has(f.path));
+  async function archiveDownload(targets: FileEntry[]) {
+    if (!remote || !targets.length) return;
+    setWorking(true);
+    try {
+      const name = targets.length === 1 ? targets[0].name + ".tar.gz" : "shell-ex-archive.tar.gz";
+      const destination = await chooseDownloadPath(name);
+      if (!destination || sessionIdentity.current !== remote.id) return;
+      notify(tr("正在服务器上生成临时压缩包…"), "info");
+      await api("transfer_start_archive", {
+        sessionId: remote.id,
+        paths: targets.map((item) => item.path),
+        localPath: destination,
+      });
+      notify(tr("压缩包已加入下载队列。"), "success");
+      onTransfer();
+    } catch (e) {
+      notify(errorText(e), "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+  async function recursiveRemove(entry: FileEntry) {
+    if (!remote || !entry.isDir || entry.isSymlink) return;
+    if (!(await confirmAction(
+      tr("将永久递归删除目录及其所有内容：\n{0}\n\n此操作无法撤销。程序不会跟随符号链接。", entry.path),
+      tr("确认递归删除"),
+    ))) return;
+    if (sessionIdentity.current !== remote.id) return;
+    setWorking(true);
+    try {
+      await api("sftp_remove_tree", { sessionId: remote.id, path: entry.path });
+      notify(tr("已删除选中的项目。"), "success");
+    } catch (e) {
+      notify(errorText(e), "error");
+    } finally {
+      setWorking(false);
+      await load();
+    }
+  }
+  async function remove(targets = entries.filter((f) => selected.has(f.path))) {
+    if (!remote || !targets.length) return;
     if (
       !(await confirmAction(
-        tr("将删除 {0} 项：\n{1}\n\n删除无法撤销。非空目录不会递归删除。", targets.length, targets.map((f) => f.name).join("\n")),
+        tr("将删除 {0} 项：\n{1}\n\n删除无法撤销。非空目录不会递归删除。", targets.length, targets.map((f) => f.path).join("\n")),
         tr("删除远程文件"),
       ))
     )
       return;
+    if (sessionIdentity.current !== remote.id) return;
     setWorking(true);
     try {
       for (const f of targets)
@@ -325,10 +431,10 @@ export function FilePanel({
     if (!remote || !operation) return;
     setWorking(true);
     try {
-      if (operation.kind === "mkdir") {
-        if (!value || value.includes("/") || value === "." || value === "..")
-          throw new Error(tr("请输入单个目录名称。"));
-        await api("sftp_mkdir", {
+      if (operation.kind === "mkdir" || operation.kind === "touch") {
+        if (!value || value.includes("/") || value.includes("\0") || value === "." || value === "..")
+          throw new Error(tr("请输入单个文件名。"));
+        await api(operation.kind === "mkdir" ? "sftp_mkdir" : "sftp_create_file", {
           sessionId: remote.id,
           path: joinPath(path, value),
         });
@@ -375,6 +481,19 @@ export function FilePanel({
       e.name.toLowerCase().includes(filter.toLowerCase()),
   );
   const chosen = entries.filter((e) => selected.has(e.path));
+  const menuTargets = menu?.targets || [];
+  const single = menuTargets.length === 1 ? menuTargets[0] : undefined;
+  const canOpen = !!single;
+  const canEdit = !!single && !single.isDir;
+  const canPack = menuTargets.length > 0 && menuTargets.every((entry) => !entry.isSymlink);
+  function runMenu(action: () => void) {
+    setMenu(null);
+    action();
+  }
+  function showOperation(kind: "mkdir" | "touch" | "rename" | "chmod", entry?: FileEntry) {
+    setOperation({ kind, entry });
+    setValue(kind === "rename" ? entry!.name : kind === "chmod" ? ((entry!.permissions || 0) & 0o7777).toString(8) : "");
+  }
   return (
     <div className="file-panel" ref={panel}>
       <div className="panel-toolbar">
@@ -467,7 +586,10 @@ export function FilePanel({
       <div className="file-explorer">
         <DirectoryTree key={remote.id} sessionId={remote.id} currentPath={path}
           onNavigate={navigate} />
-        <div className="file-list scroll-area">
+        <div className="file-list scroll-area" onContextMenu={(e) => {
+          e.preventDefault();
+          openContext(e.clientX, e.clientY);
+        }}>
         <table>
           <thead>
             <tr>
@@ -501,10 +623,22 @@ export function FilePanel({
               <tr
                 key={entry.path}
                 className={selected.has(entry.path) ? "selected" : ""}
-                onDoubleClick={() =>
-                  entry.isDir ? navigate(entry.path) : setEditing(entry.path)
-                }
-                onClick={() => setSelected(new Set([entry.path]))}
+                onDoubleClick={() => openEntry(entry)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openContext(e.clientX, e.clientY, entry);
+                }}
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey)
+                    setSelected((previous) => {
+                      const next = new Set(previous);
+                      if (next.has(entry.path)) next.delete(entry.path);
+                      else next.add(entry.path);
+                      return next;
+                    });
+                  else setSelected(new Set([entry.path]));
+                }}
               >
                 <td className="check-cell" onClick={(e) => e.stopPropagation()}>
                   <input
@@ -576,6 +710,62 @@ export function FilePanel({
             onChange={(e) => setShowHidden(e.target.checked)}
           />{tr("显示隐藏文件")}</label>
       </div>
+      {menu && createPortal(
+        <div
+          ref={menuRef}
+          className="file-context-menu"
+          role="menu"
+          aria-label={tr("文件管理菜单")}
+          style={{
+            left: Math.max(6, Math.min(menu.x, window.innerWidth - 246)),
+            top: Math.max(6, Math.min(menu.y, window.innerHeight - 430)),
+            maxHeight: Math.max(120, window.innerHeight - Math.max(6, Math.min(menu.y, window.innerHeight - 430)) - 6),
+          }}
+          onContextMenu={(e) => e.preventDefault()}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+            const buttons = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") || []);
+            if (!buttons.length) return;
+            e.preventDefault();
+            const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+            buttons[(index + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length]?.focus();
+          }}
+        >
+          <button role="menuitem" onClick={() => runMenu(() => void load())}>{tr("刷新")}</button>
+          <div className="menu-divider" role="separator" />
+          <button role="menuitem" disabled={!canOpen} onClick={() => runMenu(() => openEntry(single!))}>{tr("打开")}</button>
+          <button role="menuitem" disabled={!canEdit} aria-expanded={menu.section === "open"} onClick={() => setMenu({ ...menu, section: menu.section === "open" ? null : "open" })}>{tr("打开方式")}<ChevronRight size={13} /></button>
+          {menu.section === "open" && canEdit && <div className="file-submenu">
+            <button role="menuitem" onClick={() => runMenu(() => openEntry(single!, false))}>{tr("内置代码编辑器")}</button>
+            <button role="menuitem" onClick={() => runMenu(() => openEntry(single!, true))}>{tr("纯文本编辑器")}</button>
+            <button role="menuitem" onClick={() => runMenu(() => void download(single!))}>{tr("下载本地副本")}</button>
+          </div>}
+          <button role="menuitem" aria-expanded={menu.section === "editor"} onClick={() => setMenu({ ...menu, section: menu.section === "editor" ? null : "editor" })}>{tr("选择默认文本编辑器")}<ChevronRight size={13} /></button>
+          {menu.section === "editor" && <div className="file-submenu">
+            <button role="menuitemradio" aria-checked={!defaultPlainEditor} onClick={() => runMenu(() => chooseDefaultEditor(false))}>{tr("内置代码编辑器")}{!defaultPlainEditor && <span>✓</span>}</button>
+            <button role="menuitemradio" aria-checked={defaultPlainEditor} onClick={() => runMenu(() => chooseDefaultEditor(true))}>{tr("纯文本编辑器")}{defaultPlainEditor && <span>✓</span>}</button>
+          </div>}
+          <div className="menu-divider" role="separator" />
+          <button role="menuitem" onClick={() => runMenu(() => void copyPaths(menuTargets))}>{tr("复制路径")}</button>
+          <div className="menu-divider" role="separator" />
+          <button role="menuitem" disabled={!single} onClick={() => runMenu(() => void download(single!))}>{tr("下载")}</button>
+          <button role="menuitem" onClick={() => runMenu(() => void upload())}>{tr("上传…")}</button>
+          <button role="menuitem" onClick={() => runMenu(() => void planDirectory("upload"))}>{tr("上传文件夹")}</button>
+          <div className="menu-divider" role="separator" />
+          <button role="menuitem" disabled={!canPack} onClick={() => runMenu(() => void archiveDownload(menuTargets))}>{tr("打包传输 (.tar.gz)")}</button>
+          <div className="menu-divider" role="separator" />
+          <button role="menuitem" aria-expanded={menu.section === "new"} onClick={() => setMenu({ ...menu, section: menu.section === "new" ? null : "new" })}>{tr("新建")}<ChevronRight size={13} /></button>
+          {menu.section === "new" && <div className="file-submenu">
+            <button role="menuitem" onClick={() => runMenu(() => showOperation("mkdir"))}>{tr("新建目录")}</button>
+            <button role="menuitem" onClick={() => runMenu(() => showOperation("touch"))}>{tr("新建文件")}</button>
+          </div>}
+          <div className="menu-divider" role="separator" />
+          <button role="menuitem" disabled={!single} onClick={() => runMenu(() => showOperation("rename", single))}>{tr("重命名")}</button>
+          <button role="menuitem" className="menu-danger" disabled={!menuTargets.length} onClick={() => runMenu(() => void remove(menuTargets))}>{tr("删除")}</button>
+          <button role="menuitem" className="menu-danger" disabled={!single?.isDir || single.isSymlink} onClick={() => runMenu(() => void recursiveRemove(single!))}>{tr("递归删除目录…")}</button>
+          <div className="menu-divider" role="separator" />
+          <button role="menuitem" disabled={!single || single.isSymlink} onClick={() => runMenu(() => showOperation("chmod", single))}>{tr("文件权限…")}</button>
+        </div>, document.body)}
       {directoryPlan && (
         <Modal
           title={tr("目录传输预览")}
@@ -631,7 +821,7 @@ export function FilePanel({
               }
             >
               <option value="skip">{tr("跳过已有文件（保留目标内容）")}</option>
-              <option value="overwrite">{tr("覆盖已有文件")}</option>
+              {directoryPlan.direction === "upload" && <option value="overwrite">{tr("覆盖已有文件")}</option>}
             </select>
           </Field>
         </Modal>
@@ -639,7 +829,7 @@ export function FilePanel({
       {operation && (
         <Modal
           title={
-            { mkdir: tr("新建目录"), rename: tr("重命名"), chmod: tr("修改权限") }[
+            { mkdir: tr("新建目录"), touch: tr("新建文件"), rename: tr("重命名"), chmod: tr("修改权限") }[
               operation.kind
             ]
           }
@@ -690,6 +880,7 @@ export function FilePanel({
           <EditorDialog
             sessionId={remote.id}
             path={editing}
+            plainText={plainEditor}
             notify={notify}
             onClose={() => {
               setEditing(null);

@@ -74,7 +74,7 @@ export function SettingsDialog({
         .catch((e) =>
           setUpdate({
             configured: false,
-            version: "0.4.1",
+            version: "0.4.2",
             reason: errorText(e),
           }),
         );
@@ -164,7 +164,7 @@ export function SettingsDialog({
       footer={
         <>
           <span className="footer-note">
-            Shell EX · {update?.version || "0.4.1"}
+            Shell EX · {update?.version || "0.4.2"}
           </span>
           <button className="button secondary" onClick={onClose}>{tr("取消")}</button>
           <button
@@ -214,6 +214,7 @@ export function SettingsDialog({
               <p className="section-description">{tr("清晰、克制的专业工作空间。")}</p>
               <div className="theme-options">
                 {([
+                  { id: "black", label: tr("纯黑"), hint: tr("纯黑背景与中性灰控件") },
                   { id: "graphite", label: tr("石墨灰"), hint: tr("柔和的专业深色") },
                   { id: "mist", label: tr("雾光浅色"), hint: tr("舒适的浅色界面") },
                   { id: "aurora", label: tr("极光深色"), hint: tr("青绿点缀的暗色") },

@@ -846,6 +846,16 @@ impl SshManager {
         Ok(session)
     }
     pub async fn exec(&self, id: &str, command: &str) -> Result<ExecOutput> {
+        self.exec_with_timeout(id, command, Duration::from_secs(30))
+            .await
+    }
+
+    pub(crate) async fn exec_with_timeout(
+        &self,
+        id: &str,
+        command: &str,
+        deadline: Duration,
+    ) -> Result<ExecOutput> {
         if command.len() > 65536 || command.contains('\0') {
             return Err(AppError::new(
                 "COMMAND_INVALID",
@@ -892,9 +902,15 @@ impl SshManager {
                 })?,
             })
         };
-        let result = timeout(Duration::from_secs(30), operation)
-            .await
-            .map_err(|_| AppError::new("EXEC_TIMEOUT", "Command exceeded the 30 second deadline"));
+        let result = timeout(deadline, operation).await.map_err(|_| {
+            AppError::new(
+                "EXEC_TIMEOUT",
+                format!(
+                    "Command exceeded the {} second deadline",
+                    deadline.as_secs()
+                ),
+            )
+        });
         let _ = channel.close().await;
         result?
     }

@@ -114,6 +114,108 @@ impl FileService {
             .await
             .map_err(sftp_error)
     }
+    pub async fn create_file(&self, session_id: &str, path: &str) -> Result<()> {
+        valid_mutation_path(path)?;
+        let sftp = self.ssh.sftp(session_id).await?;
+        let mut file = sftp
+            .open_with_flags_and_attributes(
+                path,
+                OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::EXCLUDE,
+                FileAttributes {
+                    permissions: Some(0o644),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(sftp_error)?;
+        file.shutdown().await?;
+        Ok(())
+    }
+
+    /// Scan the complete selected tree before removing anything. No shell
+    /// commands, link traversal, root/home deletion or unlimited recursion.
+    pub async fn remove_tree(&self, session_id: &str, path: &str) -> Result<()> {
+        let sftp = self.ssh.sftp(session_id).await?;
+        let home = sftp.canonicalize(".").await.map_err(sftp_error)?;
+        validate_recursive_root(path, &home)?;
+        let initial = sftp.symlink_metadata(path).await.map_err(sftp_error)?;
+        if !initial.file_type().is_dir()
+            || sftp.canonicalize(path).await.map_err(sftp_error)? != path
+        {
+            return Err(AppError::new(
+                "PROTECTED_PATH",
+                "Choose a real directory, not a symbolic link or alias",
+            ));
+        }
+        let mut pending = vec![(path.to_owned(), 0usize)];
+        let mut plan = Vec::new();
+        while let Some((entry, depth)) = pending.pop() {
+            if depth > 32 || plan.len() + pending.len() >= 10_000 {
+                return Err(AppError::new(
+                    "DELETE_LIMIT",
+                    "Recursive deletion is limited to 10,000 entries and 32 levels",
+                ));
+            }
+            let meta = sftp.symlink_metadata(&entry).await.map_err(sftp_error)?;
+            let is_dir = meta.file_type().is_dir();
+            let is_link = meta.file_type().is_symlink();
+            if is_dir {
+                if sftp.canonicalize(&entry).await.map_err(sftp_error)? != entry {
+                    return Err(AppError::new(
+                        "PROTECTED_PATH",
+                        "Directory path changed or resolves through a symbolic link",
+                    ));
+                }
+                let children = sftp.read_dir(&entry).await.map_err(sftp_error)?;
+                for child in children {
+                    let name = child.file_name();
+                    if name == "." || name == ".." {
+                        continue;
+                    }
+                    if name.is_empty() || name.contains('/') || name.contains('\0') {
+                        return Err(AppError::new(
+                            "INVALID_DIRECTORY_ENTRY",
+                            "Invalid directory entry",
+                        ));
+                    }
+                    pending.push((join_remote(&entry, &name), depth + 1));
+                    if plan.len() + pending.len() > 10_000 {
+                        return Err(AppError::new(
+                            "DELETE_LIMIT",
+                            "Recursive deletion is limited to 10,000 entries and 32 levels",
+                        ));
+                    }
+                }
+            }
+            plan.push((entry, is_dir, is_link));
+        }
+        // Children are removed before their parents. Recheck the parent and
+        // object type to refuse changed or redirected paths.
+        for (entry, is_dir, is_link) in plan.into_iter().rev() {
+            let (parent, _) = entry.rsplit_once('/').unwrap();
+            let parent = if parent.is_empty() { "/" } else { parent };
+            if sftp.canonicalize(parent).await.map_err(sftp_error)? != parent {
+                return Err(AppError::new(
+                    "PROTECTED_PATH",
+                    "Directory changed during deletion",
+                ));
+            }
+            let meta = sftp.symlink_metadata(&entry).await.map_err(sftp_error)?;
+            if meta.file_type().is_dir() != is_dir || meta.file_type().is_symlink() != is_link {
+                return Err(AppError::new(
+                    "DELETE_CHANGED",
+                    "Entry type changed during deletion; stopped",
+                ));
+            }
+            if is_dir {
+                sftp.remove_dir(entry).await.map_err(sftp_error)?;
+            } else {
+                sftp.remove_file(entry).await.map_err(sftp_error)?;
+            }
+        }
+        Ok(())
+    }
+
     pub async fn rename(&self, session_id: &str, from: &str, to: &str) -> Result<()> {
         valid_mutation_path(from)?;
         valid_mutation_path(to)?;
@@ -398,6 +500,25 @@ pub(crate) fn valid_mutation_path(path: &str) -> Result<()> {
     }
     Ok(())
 }
+fn validate_recursive_root(path: &str, home: &str) -> Result<()> {
+    valid_mutation_path(path)?;
+    if !path.starts_with('/')
+        || path.trim_end_matches('/') != path
+        || path.split('/').any(|p| p == "." || p == "..")
+        || path.split('/').filter(|p| !p.is_empty()).count() < 2
+        || home == path
+        || home.starts_with(&format!("{path}/"))
+        || ["/proc/", "/sys/", "/dev/", "/run/"]
+            .iter()
+            .any(|p| path.starts_with(p))
+    {
+        return Err(AppError::new(
+            "PROTECTED_PATH",
+            "Recursive deletion of root, home, system mount paths or ambiguous paths is refused",
+        ));
+    }
+    Ok(())
+}
 pub(crate) fn join_remote(parent: &str, name: &str) -> String {
     format!("{}/{}", parent.trim_end_matches('/'), name)
 }
@@ -424,6 +545,26 @@ fn editor_too_large() -> AppError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn recursive_delete_protects_root_home_and_ambiguous_paths() {
+        use super::validate_recursive_root;
+        assert!(validate_recursive_root("/home/user/work", "/home/user").is_ok());
+        for path in [
+            "/",
+            "/etc",
+            "/home",
+            "/home/user",
+            "/home/user/..",
+            "/dev/shm",
+            "/tmp/work/",
+        ] {
+            assert!(
+                validate_recursive_root(path, "/home/user").is_err(),
+                "{path}"
+            );
+        }
+    }
+
     use super::*;
     #[test]
     fn mutation_paths_protect_root_and_parent() {

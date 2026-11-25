@@ -80,7 +80,18 @@ const lightTheme = {
   white: "#dae2ed",
   brightBlack: "#7d8ca1",
 };
+const blackTheme = {
+  ...graphiteTheme,
+  background: "#000000",
+  foreground: "#e6e6e6",
+  cursor: "#e6e6e6",
+  selectionBackground: "#ffffff36",
+  black: "#171717",
+  brightBlack: "#808080",
+  white: "#e2e2e2",
+};
 const terminalThemes = {
+  black: blackTheme,
   graphite: graphiteTheme,
   dark: graphiteTheme,
   aurora: auroraTheme,
