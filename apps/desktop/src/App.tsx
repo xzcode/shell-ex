@@ -38,6 +38,7 @@ import {
   Monitor,
   LockKeyhole,
   FolderOpen,
+  FolderPlus,
   RefreshCw,
 } from "lucide-react";
 import type {
@@ -107,6 +108,12 @@ const panelItems = [
 export default function App() {
   const locale = useLocale();
   const [hosts, setHosts] = useState<Host[]>([]);
+  const [hostGroups, setHostGroups] = useState<string[]>([]);
+  const [groupMenu, setGroupMenu] = useState<string | null>(null);
+  const [groupDialog, setGroupDialog] = useState<{ mode: "create" | "rename" | "move"; name: string; value: string } | null>(null);
+  const [groupBusy, setGroupBusy] = useState(false);
+  const [groupError, setGroupError] = useState("");
+  const [newHostGroup, setNewHostGroup] = useState<string | undefined>();
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [workspace, setWorkspace] = useState<Workspace>(defaultWorkspace);
   const mainArea = useRef<HTMLDivElement>(null);
@@ -240,8 +247,57 @@ export default function App() {
     return () => { disposed = true; clearTimeout(timer); };
   }, [monitorMode]);
   const reloadHosts = useCallback(async () => {
-    setHosts(await api<Host[]>("hosts_list"));
+    const [hosts, groups] = await Promise.all([api<Host[]>("hosts_list"), api<string[]>("host_groups_list")]);
+    setHosts(hosts);
+    setHostGroups(Array.isArray(groups) ? groups : []);
   }, []);
+  function openGroupDialog(mode: "create" | "rename" | "move", name = "", value = "") {
+    setGroupMenu(null);
+    setHostMenu(null);
+    setGroupError("");
+    setGroupDialog({ mode, name, value });
+  }
+  async function saveGroup() {
+    if (!groupDialog || groupBusy) return;
+    const { mode, name, value } = groupDialog;
+    const target = value.trim();
+    if (!target) return;
+    setGroupBusy(true);
+    setGroupError("");
+    try {
+      await api("host_group_change", {
+        action: mode,
+        name: mode === "create" ? target : name,
+        newName: mode === "create" ? null : target,
+      });
+      await reloadHosts();
+      if (mode !== "move") setCollapsed((old) => {
+        const next = new Set(old);
+        next.delete(name);
+        next.delete(target);
+        return next;
+      });
+      setGroupDialog(null);
+      notify(tr("分组已保存。"), "success");
+    } catch (e) { setGroupError(errorText(e)); }
+    finally { setGroupBusy(false); }
+  }
+  async function deleteGroup(group: string) {
+    setGroupMenu(null);
+    if (group === "默认分组" || groupBusy) return;
+    if (!(await confirmAction(
+      tr("删除分组“{0}”？其中的主机将移至默认分组，连接和密码不会删除。", group),
+      tr("删除分组"),
+    ))) return;
+    setGroupBusy(true);
+    try {
+      await api("host_group_change", { action: "delete", name: group, newName: null });
+      await reloadHosts();
+      setCollapsed((old) => { const next = new Set(old); next.delete(group); return next; });
+      notify(tr("分组已删除。"), "success");
+    } catch (e) { notify(errorText(e), "error"); }
+    finally { setGroupBusy(false); }
+  }
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
@@ -249,9 +305,11 @@ export default function App() {
       api<Host[]>("hosts_list"),
       api<AppSettings>("settings_get"),
       api<Workspace>("workspace_get"),
+      api<string[]>("host_groups_list"),
     ])
-      .then(([h, s, w]) => {
+      .then(([h, s, w, g]) => {
         setHosts(h);
+        setHostGroups(Array.isArray(g) ? g : []);
         setSettings({ ...defaultSettings, ...s });
         setWorkspace({
           ...defaultWorkspace,
@@ -702,7 +760,7 @@ export default function App() {
     }
   }, [sessions, settings.autoReconnect]);
   useEffect(() => {
-    const closeHandler = () => setHostMenu(null);
+    const closeHandler = () => { setHostMenu(null); setGroupMenu(null); };
     document.addEventListener("click", closeHandler);
     return () => document.removeEventListener("click", closeHandler);
   }, []);
@@ -849,7 +907,11 @@ export default function App() {
       .toLowerCase()
       .includes(filter.toLowerCase()),
   );
-  const groups = [...new Set(visibleHosts.map((h) => h.group || "默认分组"))];
+  const allGroups = [...new Set([...hostGroups, ...hosts.map((h) => h.group || "默认分组")])];
+  const groups = allGroups.filter((group) => !filter.trim()
+    || group.toLowerCase().includes(filter.toLowerCase())
+    || visibleHosts.some((host) => (host.group || "默认分组") === group));
+  const moveGroups = [...new Set(["默认分组", ...allGroups])];
   const secondary = sessions.filter((s) => s.id !== activeId).at(-1);
   const splitEnabled = workspace.split !== "none" && !!secondary;
   const remembered = restoreRef.current
@@ -868,6 +930,7 @@ export default function App() {
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
+          setGroupMenu(null);
           setHostMenu(slot + host.id);
         }}
         onDoubleClick={() => void connectHost(host)}
@@ -895,6 +958,7 @@ export default function App() {
         <IconButton
           title={tr("{0} 更多操作", host.name)}
           onClick={() => {
+            setGroupMenu(null);
             setHostMenu(hostMenu === slot + host.id ? null : slot + host.id);
           }}
         >
@@ -911,6 +975,8 @@ export default function App() {
               }}
             >
               <Pencil size={14} />{tr("编辑连接")}</button>
+            <button onClick={() => openGroupDialog("move", host.id, host.group || "默认分组")}>
+              <FolderOpen size={14} />{tr("移动到分组")}</button>
             <button
               onClick={() => {
                 setHostDialog({
@@ -955,7 +1021,7 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark">›_</span>
           <strong>Shell EX</strong>
-          <span className="version-tag">0.4.11</span>
+          <span className="version-tag">0.4.12</span>
         </div>
         {macTitlebar && <div className="titlebar-drag" data-tauri-drag-region="" aria-hidden="true" />}
         <div className="header-actions">
@@ -991,6 +1057,9 @@ export default function App() {
                 <strong>{tr("连接")}</strong>
                 <span>{hosts.length}</span>
                 <div className="flex-spacer" />
+                <IconButton title={tr("新建分组")} disabled={groupBusy || !ready} onClick={() => openGroupDialog("create")}>
+                  <FolderPlus size={16} />
+                </IconButton>
                 <IconButton
                   title={tr("新建连接 ⌘⇧N")}
                   onClick={() => setHostDialog(null)}
@@ -1041,9 +1110,15 @@ export default function App() {
                   </section>
                 )}
                 {groups.map((group) => (
-                  <section className="host-group" key={group}>
+                  <section className="host-group" key={group} data-host-group={group}>
+                    <div className="group-heading-row" onClick={(e) => e.stopPropagation()}
+                      onContextMenu={(e) => {
+                        e.preventDefault(); e.stopPropagation();
+                        setHostMenu(null); setGroupMenu(group);
+                      }}>
                     <button
                       className="group-heading"
+                      aria-expanded={!collapsed.has(group)}
                       onClick={() =>
                         setCollapsed((c) => {
                           const n = new Set(c);
@@ -1068,13 +1143,30 @@ export default function App() {
                         }
                       </small>
                     </button>
+                    <IconButton title={tr("{0} 分组操作", group)} disabled={groupBusy}
+                      onClick={() => { setHostMenu(null); setGroupMenu(groupMenu === group ? null : group); }}>
+                      <MoreHorizontal size={14} />
+                    </IconButton>
+                    {groupMenu === group && (
+                      <div className="context-menu group-context-menu" onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => { setGroupMenu(null); setNewHostGroup(group); setHostDialog(null); }}>
+                          <Plus size={14} />{tr("在此分组新建连接")}</button>
+                        {group !== "默认分组" && <>
+                          <button onClick={() => openGroupDialog("rename", group, group)}>
+                            <Pencil size={14} />{tr("重命名分组")}</button>
+                          <button className="red" onClick={() => void deleteGroup(group)}>
+                            <Trash2 size={14} />{tr("删除分组")}</button>
+                        </>}
+                      </div>
+                    )}
+                    </div>
                     {!collapsed.has(group) &&
                       visibleHosts
                         .filter((h) => (h.group || "默认分组") === group)
                         .map((h) => renderHost(h, "group"))}
                   </section>
                 ))}
-                {!hosts.length && (
+                {!hosts.length && !groups.length && (
                   <div className="sidebar-empty">
                     <Server size={26} />
                     <strong>{tr("还没有连接")}</strong>
@@ -1086,7 +1178,7 @@ export default function App() {
                       <Plus size={13} />{tr("添加连接")}</button>
                   </div>
                 )}
-                {!!hosts.length && !visibleHosts.length && (
+                {!!filter && !groups.length && !visibleHosts.length && (
                   <p className="sidebar-no-results">{tr("没有匹配的主机")}</p>
                 )}
               </div>
@@ -1433,17 +1525,48 @@ export default function App() {
           </IconButton>
         </div>
       </footer>
+      {groupDialog && (
+        <Modal
+          title={tr(groupDialog.mode === "create" ? "新建分组" : groupDialog.mode === "rename" ? "重命名分组" : "移动到分组")}
+          onClose={() => { if (!groupBusy) setGroupDialog(null); }}
+          footer={<>
+            <button className="button secondary" disabled={groupBusy} onClick={() => setGroupDialog(null)}>{tr("取消")}</button>
+            <button className="button primary" disabled={groupBusy || !groupDialog.value.trim()
+              || (groupDialog.mode === "rename" && groupDialog.value.trim() === groupDialog.name)}
+              onClick={() => void saveGroup()}>{groupBusy ? <Busy /> : tr("确认")}</button>
+          </>}
+        >
+          {groupError && <ErrorBox message={groupError} />}
+          <Field label={tr(groupDialog.mode === "move" ? "目标分组" : "分组名称")}>
+            {groupDialog.mode === "move" ? (
+              <select value={groupDialog.value}
+                onChange={(e) => setGroupDialog((d) => d ? { ...d, value: e.target.value } : null)}>
+                {moveGroups.map((name) => <option key={name} value={name}>{name === "默认分组" ? tr("默认分组") : name}</option>)}
+              </select>
+            ) : (
+              <input value={groupDialog.value} maxLength={200}
+                onChange={(e) => setGroupDialog((d) => d ? { ...d, value: e.target.value } : null)}
+                onKeyDown={(e) => { if (e.key === "Enter" && groupDialog.value.trim()
+                  && (groupDialog.mode !== "rename" || groupDialog.value.trim() !== groupDialog.name)) void saveGroup(); }} />
+            )}
+          </Field>
+        </Modal>
+      )}
       {hostDialog !== undefined && (
         <HostDialog
           host={hostDialog}
           hosts={hosts}
+          groups={allGroups}
+          initialGroup={newHostGroup}
           notify={notify}
           onClose={() => {
             setHostDialog(undefined);
+            setNewHostGroup(undefined);
             void reloadHosts();
           }}
           onSaved={() => {
             setHostDialog(undefined);
+            setNewHostGroup(undefined);
             void reloadHosts();
             notify(tr("连接已保存。"), "success");
           }}

@@ -17,18 +17,22 @@ import { Modal, Field, Toggle, Busy, ErrorBox } from "./ui";
 export function HostDialog({
   host,
   hosts,
+  groups = [],
+  initialGroup,
   onClose,
   onSaved,
   notify,
 }: {
   host: Host | null;
   hosts: Host[];
+  groups?: string[];
+  initialGroup?: string;
   onClose: () => void;
   onSaved: (host: Host) => void;
   notify: Notify;
 }) {
   const [form, setForm] = useState<Host>(() =>
-    host ? normalizeHost(host) : newHost(),
+    host ? normalizeHost(host) : { ...newHost(), ...(initialGroup ? { group: initialGroup } : {}) },
   );
   const [tab, setTab] = useState("basic");
   const [password, setPassword] = useState("");
@@ -77,6 +81,7 @@ export function HostDialog({
           name: form.name.trim(),
           address: form.address.trim(),
           username: form.username.trim(),
+          group: form.group.trim() || "默认分组",
           credentialStore: mode,
         },
         secret: mode !== "session" && native && persistentAuth ? secret : null,
@@ -190,7 +195,7 @@ export function HostDialog({
               onChange={(e) => set("group", e.target.value)}
             />
             <datalist id="host-groups">
-              {[...new Set(hosts.map((h) => h.group))].map((g) => (
+              {[...new Set(["默认分组", ...groups, ...hosts.map((h) => h.group).filter(Boolean)])].map((g) => (
                 <option value={g} key={g} />
               ))}
             </datalist>

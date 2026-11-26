@@ -66,6 +66,148 @@ impl Storage {
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.map(|row| Ok(serde_json::from_str(&row?)?)).collect()
     }
+    /// Keep explicit groups even when they contain no saved hosts.
+    pub fn host_groups(&self) -> Result<Vec<String>> {
+        let db = self.lock()?;
+        let mut groups = read_host_groups(&db)?;
+        let mut stmt = db.prepare("SELECT data FROM hosts ORDER BY rowid")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        for row in rows {
+            let value: serde_json::Value = serde_json::from_str(&row?)?;
+            let name = host_group_name(&value);
+            if !groups.iter().any(|g| g == name) {
+                groups.push(name.to_owned());
+            }
+        }
+        Ok(groups)
+    }
+
+    /// Rename/delete a group transactionally without accessing credentials
+    /// or modifying any host field other than its group.
+    pub fn change_host_group(
+        &self,
+        action: &str,
+        name: &str,
+        new_name: Option<&str>,
+    ) -> Result<()> {
+        let mut db = self.lock()?;
+        let tx = db.transaction()?;
+        let mut groups = read_host_groups(&tx)?;
+        let hosts: Vec<(String, serde_json::Value)> = {
+            let mut stmt = tx.prepare("SELECT id,data FROM hosts ORDER BY rowid")?;
+            let rows =
+                stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+            rows.map(|row| {
+                let (id, data) = row?;
+                Ok((id, serde_json::from_str(&data)?))
+            })
+            .collect::<Result<_>>()?
+        };
+        let mut known = groups.clone();
+        for (_, value) in &hosts {
+            let group = host_group_name(value);
+            if !known.iter().any(|g| g == group) {
+                known.push(group.to_owned());
+            }
+        }
+        let validate_new = |candidate: &str| -> Result<()> {
+            if candidate.trim() != candidate
+                || candidate.is_empty()
+                || candidate.len() > 200
+                || candidate.chars().any(char::is_control)
+                || candidate == "__favorites"
+                || candidate == DEFAULT_HOST_GROUP
+            {
+                return Err(AppError::new(
+                    "INVALID_GROUP_NAME",
+                    "分组名称无效，请使用非空名称且不超过 200 字节。",
+                ));
+            }
+            if known.iter().any(|g| g == candidate) {
+                return Err(AppError::new("GROUP_EXISTS", "该分组已经存在。"));
+            }
+            Ok(())
+        };
+        match action {
+            "create" => {
+                validate_new(name)?;
+                if groups.len() >= 1000 {
+                    return Err(AppError::new("GROUP_LIMIT", "自定义分组数量已达上限。"));
+                }
+                groups.push(name.to_owned());
+            }
+            "rename" | "delete" => {
+                if name == DEFAULT_HOST_GROUP || !known.iter().any(|g| g == name) {
+                    return Err(AppError::new(
+                        "GROUP_NOT_EDITABLE",
+                        "默认分组不能修改，或该分组已不存在。",
+                    ));
+                }
+                let target = if action == "rename" {
+                    let candidate = new_name
+                        .ok_or_else(|| AppError::new("INVALID_GROUP_NAME", "请输入新分组名称。"))?;
+                    validate_new(candidate)?;
+                    candidate
+                } else {
+                    DEFAULT_HOST_GROUP
+                };
+                groups.retain(|g| g != name);
+                if action == "rename" {
+                    if groups.len() >= 1000 {
+                        return Err(AppError::new("GROUP_LIMIT", "自定义分组数量已达上限。"));
+                    }
+                    groups.push(target.to_owned());
+                }
+                for (id, mut value) in hosts {
+                    if host_group_name(&value) == name {
+                        let object = value
+                            .as_object_mut()
+                            .ok_or_else(|| AppError::new("INVALID_HOST", "主机配置不存在"))?;
+                        object.insert(
+                            "group".to_owned(),
+                            serde_json::Value::String(target.to_owned()),
+                        );
+                        tx.execute(
+                            "UPDATE hosts SET data=?1 WHERE id=?2",
+                            params![serde_json::to_string(&value)?, id],
+                        )?;
+                    }
+                }
+            }
+            "move" => {
+                let target = new_name
+                    .ok_or_else(|| AppError::new("INVALID_GROUP_NAME", "请选择目标分组。"))?;
+                if target != DEFAULT_HOST_GROUP && !known.iter().any(|g| g == target) {
+                    return Err(AppError::new("GROUP_NOT_FOUND", "目标分组不存在。"));
+                }
+                let (id, mut value) = hosts
+                    .into_iter()
+                    .find(|(id, _)| id == name)
+                    .ok_or_else(|| AppError::new("HOST_NOT_FOUND", "主机配置不存在"))?;
+                let previous = host_group_name(&value).to_owned();
+                if previous != DEFAULT_HOST_GROUP && !groups.contains(&previous) {
+                    groups.push(previous);
+                }
+                let object = value
+                    .as_object_mut()
+                    .ok_or_else(|| AppError::new("INVALID_HOST", "主机配置不存在"))?;
+                object.insert(
+                    "group".to_owned(),
+                    serde_json::Value::String(target.to_owned()),
+                );
+                tx.execute(
+                    "UPDATE hosts SET data=?1 WHERE id=?2",
+                    params![serde_json::to_string(&value)?, id],
+                )?;
+            }
+            _ => return Err(AppError::new("INVALID_GROUP_ACTION", "不支持的分组操作。")),
+        }
+        tx.execute("INSERT INTO preferences(key,data) VALUES('host-groups',?1) ON CONFLICT(key) DO UPDATE SET data=excluded.data",
+            [serde_json::to_string(&groups)?])?;
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn host(&self, id: &str) -> Result<Host> {
         let data: Option<String> = self
             .lock()?
@@ -98,7 +240,11 @@ impl Storage {
                 }
             }
         }
-        self.lock()?.execute("INSERT INTO hosts(id,data) VALUES(?1,?2) ON CONFLICT(id) DO UPDATE SET data=excluded.data", params![host.id, serde_json::to_string(&host)?])?;
+        let mut db = self.lock()?;
+        let tx = db.transaction()?;
+        remember_host_groups(&tx, std::iter::once(host.group.as_str()))?;
+        tx.execute("INSERT INTO hosts(id,data) VALUES(?1,?2) ON CONFLICT(id) DO UPDATE SET data=excluded.data", params![host.id, serde_json::to_string(&host)?])?;
+        tx.commit()?;
         Ok(host)
     }
     pub fn delete_host(&self, id: &str) -> Result<()> {
@@ -112,8 +258,11 @@ impl Storage {
                 "请先移除其他主机对此跳板机的引用",
             ));
         }
-        self.lock()?
-            .execute("DELETE FROM hosts WHERE id=?1", [id])?;
+        let mut db = self.lock()?;
+        let tx = db.transaction()?;
+        remember_host_groups(&tx, std::iter::empty::<&str>())?;
+        tx.execute("DELETE FROM hosts WHERE id=?1", [id])?;
+        tx.commit()?;
         Ok(())
     }
     pub fn trust_status(&self, host: &Host, key: HostKeyInfo) -> Result<TrustStatus> {
@@ -283,6 +432,7 @@ impl Storage {
         self.validate_import(hosts, snippets, settings, workspace)?;
         let mut db = self.lock()?;
         let tx = db.transaction()?;
+        remember_host_groups(&tx, hosts.iter().map(|h| h.group.as_str()))?;
         for h in hosts {
             tx.execute("INSERT INTO hosts(id,data) VALUES(?1,?2) ON CONFLICT(id) DO UPDATE SET data=excluded.data",params![h.id,serde_json::to_string(h)?])?;
         }
@@ -298,6 +448,52 @@ impl Storage {
         tx.commit()?;
         Ok(())
     }
+}
+
+const DEFAULT_HOST_GROUP: &str = "默认分组";
+
+fn host_group_name(value: &serde_json::Value) -> &str {
+    value
+        .get("group")
+        .and_then(serde_json::Value::as_str)
+        .filter(|name| !name.is_empty())
+        .unwrap_or(DEFAULT_HOST_GROUP)
+}
+
+fn read_host_groups(db: &Connection) -> Result<Vec<String>> {
+    let data: Option<String> = db
+        .query_row(
+            "SELECT data FROM preferences WHERE key='host-groups'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(data
+        .map(|json| serde_json::from_str(&json))
+        .transpose()?
+        .unwrap_or_default())
+}
+
+fn remember_host_groups<'a>(
+    db: &Connection,
+    additional: impl Iterator<Item = &'a str>,
+) -> Result<()> {
+    let mut groups = read_host_groups(db)?;
+    let mut stmt = db.prepare("SELECT data FROM hosts ORDER BY rowid")?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    let mut names = Vec::new();
+    for row in rows {
+        let value: serde_json::Value = serde_json::from_str(&row?)?;
+        names.push(host_group_name(&value).to_owned());
+    }
+    names.extend(additional.map(str::to_owned));
+    for name in names {
+        if !name.is_empty() && name != DEFAULT_HOST_GROUP && !groups.contains(&name) {
+            groups.push(name);
+        }
+    }
+    db.execute("INSERT INTO preferences(key,data) VALUES('host-groups',?1) ON CONFLICT(key) DO UPDATE SET data=excluded.data", [serde_json::to_string(&groups)?])?;
+    Ok(())
 }
 
 pub fn validate_host(h: &Host) -> Result<()> {
@@ -346,6 +542,8 @@ pub fn validate_host(h: &Host) -> Result<()> {
         ));
     }
     if h.group.len() > 200
+        || h.group == "__favorites"
+        || h.group.chars().any(char::is_control)
         || h.notes.len() > 10000
         || h.color.len() > 40
         || h.startup_directory
@@ -514,6 +712,68 @@ mod tests {
             notes: "".into(),
         }
     }
+    #[test]
+    fn host_groups_persist_and_only_change_group_metadata() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("groups.sqlite3");
+        let store = Storage::open(&path).unwrap();
+        store
+            .change_host_group("create", "Production", None)
+            .unwrap();
+        assert_eq!(store.host_groups().unwrap(), vec!["Production"]);
+        assert!(store
+            .change_host_group("create", "Production", None)
+            .is_err());
+        assert!(store
+            .change_host_group("create", DEFAULT_HOST_GROUP, None)
+            .is_err());
+        assert!(store.change_host_group("create", " ", None).is_err());
+        let mut original = host();
+        original.group = "Production".into();
+        original.favorite = true;
+        original.notes = "keep this".into();
+        store.save_host(original.clone()).unwrap();
+        store.change_host_group("create", "Other", None).unwrap();
+        store
+            .change_host_group("move", &original.id, Some("Other"))
+            .unwrap();
+        assert_eq!(store.host(&original.id).unwrap().group, "Other");
+        assert!(store
+            .host_groups()
+            .unwrap()
+            .contains(&"Production".to_owned()));
+        store
+            .change_host_group("move", &original.id, Some("Production"))
+            .unwrap();
+        store.change_host_group("delete", "Other", None).unwrap();
+        store
+            .change_host_group("rename", "Production", Some("Servers"))
+            .unwrap();
+        let mut expected = serde_json::to_value(&original).unwrap();
+        expected["group"] = serde_json::json!("Servers");
+        assert_eq!(
+            serde_json::to_value(store.host(&original.id).unwrap()).unwrap(),
+            expected
+        );
+        assert_eq!(store.host_groups().unwrap(), vec!["Servers"]);
+        drop(store);
+        let store = Storage::open(&path).unwrap();
+        assert_eq!(store.host_groups().unwrap(), vec!["Servers"]);
+        store.change_host_group("delete", "Servers", None).unwrap();
+        expected["group"] = serde_json::json!(DEFAULT_HOST_GROUP);
+        assert_eq!(
+            serde_json::to_value(store.host(&original.id).unwrap()).unwrap(),
+            expected
+        );
+        assert_eq!(store.host_groups().unwrap(), vec![DEFAULT_HOST_GROUP]);
+        assert!(store
+            .change_host_group("delete", DEFAULT_HOST_GROUP, None)
+            .is_err());
+        store.change_host_group("create", "Empty", None).unwrap();
+        store.change_host_group("delete", "Empty", None).unwrap();
+        assert_eq!(store.host_groups().unwrap(), vec![DEFAULT_HOST_GROUP]);
+    }
+
     #[test]
     fn changed_fingerprint_requires_explicit_replacement_and_is_address_bound() {
         let store = Storage::from_connection(Connection::open_in_memory().unwrap()).unwrap();

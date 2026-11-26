@@ -5,6 +5,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -23,6 +24,9 @@ import {
   Shield,
   Home,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
   Link2,
 } from "lucide-react";
 import type { FileEntry, Notify, Session } from "./types";
@@ -41,6 +45,7 @@ import { Busy, Empty, ErrorBox, Field, IconButton, Modal } from "./ui";
 import { DirectoryTree } from "./DirectoryTree";
 import { ResizeHandle } from "./ResizeHandle";
 import { defaultWorkspace } from "./types";
+import { defaultFileSort, FILE_SORT_STORAGE_KEY, fileSortColumns, nextFileSort, parseFileSort, sortFileEntries, type FileSort, type FileSortKey } from "./fileSort";
 const EditorDialog = lazy(() => import("./RemoteEditor"));
 function permissionText(entry: FileEntry): string {
   if (entry.permissions == null) return "—";
@@ -92,6 +97,24 @@ export function FilePanel({
   const [working, setWorking] = useState(false);
   const [showHidden, setShowHidden] = useState(true);
   const [filter, setFilter] = useState("");
+  const [fileSort, setFileSort] = useState<FileSort>(() => {
+    try { return parseFileSort(localStorage.getItem(FILE_SORT_STORAGE_KEY)); }
+    catch { return { ...defaultFileSort }; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(FILE_SORT_STORAGE_KEY, JSON.stringify(fileSort)); }
+    catch { /* Keep the current sort even when storage is unavailable. */ }
+  }, [fileSort]);
+  const locale = getLocale();
+  const filtered = useMemo(() => sortFileEntries(
+    entries.filter((entry) => (showHidden || !entry.name.startsWith("."))
+      && entry.name.toLowerCase().includes(filter.toLowerCase())),
+    fileSort, locale,
+  ), [entries, showHidden, filter, fileSort, locale]);
+  function changeSort(column: FileSortKey) {
+    setFileSort((previous) => nextFileSort(previous, column));
+    setMenu(null);
+  }
   const [directoryPlan, setDirectoryPlan] = useState<{
     id: string;
     totalFiles: number;
@@ -140,12 +163,7 @@ export function FilePanel({
         path,
       });
       if (serial !== request.current) return;
-      setEntries(
-        list.sort(
-          (a, b) =>
-            Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name),
-        ),
-      );
+      setEntries(list);
       setSelected(new Set());
     } catch (e) {
       if (serial === request.current) setError(errorText(e));
@@ -496,13 +514,7 @@ export function FilePanel({
         }
       />
     );
-  const filtered = entries.filter(
-    (e) =>
-      (showHidden || !e.name.startsWith(".")) &&
-      e.name.toLowerCase().includes(filter.toLowerCase()),
-  );
   const chosen = entries.filter((e) => selected.has(e.path));
-  const columnLabels = ["文件名", "大小", "类型", "修改时间", "权限", "用户/用户组"];
   const columnMin = [120, 64, 64, 112, 90, 78];
   const maxTreeWidth = Math.max(120, Math.min(700, explorerWidth - 200));
   const menuTargets = menu?.targets || [];
@@ -640,17 +652,29 @@ export function FilePanel({
                   }
                 />
               </th>
-              {columnLabels.map((label, index) => (
-                <th key={label} title={tr(label)} className="resizable-file-heading">
-                  <div className="file-heading-content">
-                    <span>{tr(label)}</span>
-                    <ResizeHandle column label={tr("调整列宽：{0}", tr(label))}
-                      value={columnWidths[index]} min={columnMin[index]} max={1400}
-                      onChange={(width) => onColumnWidth(index, width)}
-                      onReset={() => onColumnWidth(index, defaultWorkspace.fileColumnWidths[index])} />
-                  </div>
-                </th>
-              ))}
+              {fileSortColumns.map(({ key, label }, index) => {
+                const active = fileSort.column === key;
+                const direction = active && fileSort.direction === "desc" ? "descending" : "ascending";
+                const SortIcon = active ? (direction === "ascending" ? ChevronUp : ChevronDown) : ChevronsUpDown;
+                return (
+                  <th key={key} className="resizable-file-heading"
+                    aria-sort={active ? direction : undefined}>
+                    <div className="file-heading-content">
+                      <button type="button" className={"file-sort-button" + (active ? " active" : "")}
+                        aria-label={tr("按 {0} 排序", tr(label))}
+                        title={tr(active && fileSort.direction === "asc" ? "按 {0} 降序排列" : "按 {0} 升序排列", tr(label))}
+                        onClick={() => changeSort(key)}>
+                        <span>{tr(label)}</span>
+                        <SortIcon size={12} aria-hidden="true" />
+                      </button>
+                      <ResizeHandle column label={tr("调整列宽：{0}", tr(label))}
+                        value={columnWidths[index]} min={columnMin[index]} max={1400}
+                        onChange={(width) => onColumnWidth(index, width)}
+                        onReset={() => onColumnWidth(index, defaultWorkspace.fileColumnWidths[index])} />
+                    </div>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -709,7 +733,7 @@ export function FilePanel({
                 <td>{entry.isDir ? "—" : bytes(entry.size)}</td>
                 <td>{entry.isSymlink ? tr("符号链接") : entry.isDir ? tr("文件夹") : tr("文件")}</td>
                 <td>
-                  {entry.modified
+                  {entry.modified != null && Number.isFinite(entry.modified)
                     ? new Date(entry.modified * 1000).toLocaleString(getLocale(), {
                         year: "numeric", month: "2-digit", day: "2-digit",
                         hour: "2-digit", minute: "2-digit",

@@ -23,6 +23,13 @@ function stored<T>(name: string, fallback: T): T {
 function put(name: string, value: unknown) {
   localStorage.setItem(`shell-ex-preview-${name}`, JSON.stringify(value));
 }
+const defaultGroup = "默认分组";
+function previewGroups(hosts: Host[]) {
+  return [...new Set([...stored<string[]>("host-groups", []), ...hosts.map((h) => h.group || defaultGroup)])];
+}
+function rememberGroups(hosts: Host[]) {
+  put("host-groups", previewGroups(hosts).filter((name) => name !== defaultGroup));
+}
 export async function api<T>(
   command: string,
   args: Record<string, unknown> = {},
@@ -34,14 +41,52 @@ export async function api<T>(
     case "hosts_list":
       result = stored<Host[]>("hosts", []).map(normalizeHost);
       break;
+    case "host_groups_list":
+      result = previewGroups(stored<Host[]>("hosts", []));
+      break;
+    case "host_group_change": {
+      const action = args.action as string;
+      const name = args.name as string;
+      const target = args.newName as string;
+      const hosts = stored<Host[]>("hosts", []);
+      const known = previewGroups(hosts);
+      let groups = known.filter((g) => g !== defaultGroup);
+      const validate = (value: string) => {
+        if (!value || value.trim() !== value || new TextEncoder().encode(value).length > 200
+          || /[\u0000-\u001f\u007f-\u009f]/.test(value)
+          || value === "__favorites" || value === defaultGroup)
+          throw new Error(tr("分组名称无效，请使用非空名称且不超过 200 字节。"));
+        if (known.includes(value)) throw new Error(tr("该分组已经存在。"));
+      };
+      if (action === "create") {
+        validate(name);
+        groups.push(name);
+      } else if (action === "move") {
+        if (!hosts.some((h) => h.id === name)) throw new Error(tr("主机配置不存在"));
+        if (target !== defaultGroup && !known.includes(target)) throw new Error(tr("目标分组不存在。"));
+        put("hosts", hosts.map((h) => h.id === name ? { ...h, group: target } : h));
+      } else if (action === "rename" || action === "delete") {
+        if (name === defaultGroup || !known.includes(name))
+          throw new Error(tr("默认分组不能修改，或该分组已不存在。"));
+        if (action === "rename") validate(target);
+        groups = groups.filter((g) => g !== name);
+        if (action === "rename") groups.push(target);
+        put("hosts", hosts.map((h) => (h.group || defaultGroup) === name
+          ? { ...h, group: action === "rename" ? target : defaultGroup } : h));
+      } else throw new Error(tr("不支持的分组操作。"));
+      put("host-groups", groups);
+      break;
+    }
     case "host_save": {
       const host = normalizeHost(args.host as Host);
       const hosts = stored<Host[]>("hosts", []);
+      rememberGroups([...hosts, host]);
       put("hosts", [...hosts.filter((h) => h.id !== host.id), host]);
       result = host;
       break;
     }
     case "host_delete":
+      rememberGroups(stored<Host[]>("hosts", []));
       put(
         "hosts",
         stored<Host[]>("hosts", []).filter((h) => h.id !== args.id),

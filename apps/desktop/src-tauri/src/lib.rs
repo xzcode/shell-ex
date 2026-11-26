@@ -321,6 +321,27 @@ fn hosts_list(state: State<'_, AppState>) -> Result<Vec<Host>> {
     state.store.hosts()
 }
 #[tauri::command]
+fn host_groups_list(state: State<'_, AppState>) -> Result<Vec<String>> {
+    state.store.host_groups()
+}
+#[tauri::command]
+async fn host_group_change(
+    state: State<'_, AppState>,
+    action: String,
+    name: String,
+    new_name: Option<String>,
+) -> Result<()> {
+    let store = state.store.clone();
+    let mutation = state.mutation.clone();
+    tokio::task::spawn_blocking(move || {
+        let _guard = mutation.lock().map_err(AppError::internal)?;
+        store.change_host_group(&action, &name, new_name.as_deref())
+    })
+    .await
+    .map_err(join_error)?
+}
+
+#[tauri::command]
 async fn host_save(
     state: State<'_, AppState>,
     mut host: Host,
@@ -1128,6 +1149,8 @@ pub fn run() {
     }
     let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
         hosts_list,
+        host_groups_list,
+        host_group_change,
         host_save,
         host_delete,
         host_secret_status,
