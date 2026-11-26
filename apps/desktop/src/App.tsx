@@ -1446,8 +1446,9 @@ export default function App() {
                           treeWidth={workspace.fileTreeWidth}
                           columnWidths={workspace.fileColumnWidths}
                           onTreeWidth={(width) => setWorkspace((w) => ({ ...w, fileTreeWidth: width }))}
-                          onColumnWidth={(index, width) => setWorkspace((w) => ({
-                            ...w, fileColumnWidths: w.fileColumnWidths.map((v, i) => i === index ? width : v),
+                          onColumnWidths={(widths) => setWorkspace((w) => ({
+                            ...w, fileColumnWidths: widths.map((width, i) =>
+                              clampWidth(width, defaultWorkspace.fileColumnWidths[i], [120, 64, 64, 112, 90, 78][i], 1400)),
                           }))}
                         />
                       </div>

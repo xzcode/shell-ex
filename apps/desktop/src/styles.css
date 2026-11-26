@@ -3040,7 +3040,7 @@ select:not([multiple]) {
 .resize-handle.vertical.wide-hit:hover,
 .resize-handle.vertical.wide-hit:focus-visible { background: var(--accent-strong); }
 .file-explorer .directory-tree { border-right: 0; max-width: calc(100% - 205px); }
-.file-explorer .resizable-file-table { table-layout: fixed; min-width: 0; }
+.file-explorer .resizable-file-table { table-layout: fixed; min-width: 100%; }
 .resizable-file-table th, .resizable-file-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .resizable-file-table .resizable-file-heading { position: relative; padding-right: 12px; }
 .resizable-file-heading > span { display: block; overflow: hidden; text-overflow: ellipsis; }

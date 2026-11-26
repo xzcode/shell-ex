@@ -103,7 +103,7 @@ test("dock, directory tree and individual columns resize and persist", async ({ 
   await expect.poll(async () => page.evaluate(() => {
     const w = JSON.parse(localStorage.getItem("fixture-workspace") || "{}");
     return [w.monitorWidth, w.fileTreeWidth, w.fileColumnWidths?.[0]];
-  })).toEqual([455, 270, 380]);
+  })).toEqual([455, 270, Math.round(nameInitial + 100)]);
 
   await monitor.getByRole("button", { name: "分离监控面板", exact: true }).click();
   await expect(monitor).toHaveCount(0);
@@ -120,7 +120,7 @@ test("dock, directory tree and individual columns resize and persist", async ({ 
   await first.locator(".host-main").dblclick();
   await expect(page.locator(".file-list tbody")).toContainText("example.log");
   await expect.poll(async () => Math.round((await tree.boundingBox())!.width)).toBe(270);
-  await expect.poll(async () => Math.round((await name.boundingBox())!.width)).toBe(380);
+  await expect.poll(async () => Math.round((await name.boundingBox())!.width)).toBe(Math.round(nameInitial + 100));
   await nameHandle.dblclick();
   await expect.poll(async () => Math.round((await name.boundingBox())!.width)).toBe(280);
 });

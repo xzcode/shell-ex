@@ -45,6 +45,7 @@ import { Busy, Empty, ErrorBox, Field, IconButton, Modal } from "./ui";
 import { DirectoryTree } from "./DirectoryTree";
 import { ResizeHandle } from "./ResizeHandle";
 import { defaultWorkspace } from "./types";
+import { FILE_CHECK_COLUMN_WIDTH, FILE_COLUMN_MAX_WIDTH, fileTableWidth, fitFileColumnWidths, resizeFileColumnWidths } from "./fileColumnLayout";
 import { defaultFileSort, FILE_SORT_STORAGE_KEY, fileSortColumns, nextFileSort, parseFileSort, sortFileEntries, type FileSort, type FileSortKey } from "./fileSort";
 const EditorDialog = lazy(() => import("./RemoteEditor"));
 function permissionText(entry: FileEntry): string {
@@ -65,7 +66,7 @@ export function FilePanel({
   treeWidth,
   columnWidths,
   onTreeWidth,
-  onColumnWidth,
+  onColumnWidths,
 }: {
   session: Session | null;
   notify: Notify;
@@ -73,7 +74,7 @@ export function FilePanel({
   treeWidth: number;
   columnWidths: number[];
   onTreeWidth: (width: number) => void;
-  onColumnWidth: (index: number, width: number) => void;
+  onColumnWidths: (widths: number[]) => void;
 }) {
   const [path, setPath] = useState(".");
   const [inputPath, setInputPath] = useState(".");
@@ -129,16 +130,31 @@ export function FilePanel({
   const request = useRef(0);
   const panel = useRef<HTMLDivElement>(null);
   const explorerRef = useRef<HTMLDivElement>(null);
+  const fileListRef = useRef<HTMLDivElement>(null);
   const [explorerWidth, setExplorerWidth] = useState(800);
+  const [fileListWidth, setFileListWidth] = useState(0);
   useEffect(() => {
-    if (!explorerRef.current) return;
-    const target = explorerRef.current;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry.contentRect.width > 0) setExplorerWidth(entry.contentRect.width);
-    });
-    observer.observe(target);
+    const explorer = explorerRef.current;
+    const list = fileListRef.current;
+    if (!explorer || !list) return;
+    function measure() {
+      if (explorer!.clientWidth > 0) setExplorerWidth(explorer!.clientWidth);
+      // clientWidth excludes the vertical scrollbar on non-overlay platforms.
+      if (list!.clientWidth > 0) setFileListWidth(list!.clientWidth);
+    }
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(explorer);
+    observer.observe(list);
     return () => observer.disconnect();
   }, [session?.id, session?.status, session?.local]);
+  const renderedColumnWidths = useMemo(
+    () => fitFileColumnWidths(columnWidths, fileListWidth),
+    [columnWidths, fileListWidth],
+  );
+  function resizeColumn(index: number, width: number) {
+    onColumnWidths(resizeFileColumnWidths(renderedColumnWidths, index, width, fileListWidth));
+  }
   const sessionIdentity = useRef(session?.id);
   sessionIdentity.current = session?.id;
   const remote =
@@ -625,13 +641,13 @@ export function FilePanel({
         <ResizeHandle label={tr("调整目录树宽度")} value={Math.min(treeWidth, maxTreeWidth)}
           min={120} max={maxTreeWidth} onChange={onTreeWidth}
           onReset={() => onTreeWidth(defaultWorkspace.fileTreeWidth)} />
-        <div className="file-list scroll-area" onContextMenu={(e) => {
+        <div className="file-list scroll-area" ref={fileListRef} onContextMenu={(e) => {
           e.preventDefault();
           openContext(e.clientX, e.clientY);
         }}>
-        <table className="resizable-file-table" style={{ width: 34 + columnWidths.reduce((sum, width) => sum + width, 0) }}>
-          <colgroup><col style={{ width: 34 }} />
-            {columnWidths.map((width, i) => <col key={i} style={{ width }} />)}
+        <table className="resizable-file-table" style={{ width: fileTableWidth(renderedColumnWidths) }}>
+          <colgroup><col style={{ width: FILE_CHECK_COLUMN_WIDTH }} />
+            {renderedColumnWidths.map((width, i) => <col key={i} style={{ width }} />)}
           </colgroup>
           <thead>
             <tr>
@@ -668,9 +684,9 @@ export function FilePanel({
                         <SortIcon size={12} aria-hidden="true" />
                       </button>
                       <ResizeHandle column label={tr("调整列宽：{0}", tr(label))}
-                        value={columnWidths[index]} min={columnMin[index]} max={1400}
-                        onChange={(width) => onColumnWidth(index, width)}
-                        onReset={() => onColumnWidth(index, defaultWorkspace.fileColumnWidths[index])} />
+                        value={renderedColumnWidths[index]} min={columnMin[index]} max={Math.max(FILE_COLUMN_MAX_WIDTH, renderedColumnWidths[index])}
+                        onChange={(width) => resizeColumn(index, width)}
+                        onReset={() => resizeColumn(index, defaultWorkspace.fileColumnWidths[index])} />
                     </div>
                   </th>
                 );

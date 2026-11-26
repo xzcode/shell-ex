@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { defaultFileSort, nextFileSort, parseFileSort, sortFileEntries, FILE_SORT_STORAGE_KEY, type FileSortKey } from "../src/fileSort";
 import type { FileEntry } from "../src/types";
+import { fileTableWidth, fitFileColumnWidths, resizeFileColumnWidths } from "../src/fileColumnLayout";
 
 function item(name: string, size: number, modified: number | null, extra: Partial<FileEntry> = {}): FileEntry {
   return { name, path: "/app/" + name, isDir: false, isSymlink: false, size, modified, permissions: 0o100644, uid: 1000, gid: 1000, ...extra };
@@ -34,6 +35,24 @@ test("sorts raw file metadata, preserves input, and keeps unavailable values las
   expect(parseFileSort("corrupt")).toEqual(defaultFileSort);
   expect(nextFileSort(defaultFileSort, "name")).toEqual({ column: "name", direction: "desc" });
   expect(nextFileSort({ column: "name", direction: "desc" }, "size")).toEqual({ column: "size", direction: "asc" });
+});
+
+test("file columns fill wide panes, keep explicit resize widths and overflow on narrow panes", () => {
+  const preferred = [280, 100, 92, 160, 132, 116];
+  expect(fitFileColumnWidths(preferred, 600)).toEqual(preferred);
+  const wide = fitFileColumnWidths(preferred, 1800);
+  expect(fileTableWidth(wide)).toBe(1800);
+  expect(wide.every((width, i) => width > preferred[i])).toBe(true);
+  expect(preferred).toEqual([280, 100, 92, 160, 132, 116]);
+  for (const index of [0, 5]) {
+    const grown = resizeFileColumnWidths(wide, index, wide[index] + 40, 1800);
+    expect(grown[index]).toBe(wide[index] + 40);
+    expect(grown.filter((_, i) => i !== index)).toEqual(wide.filter((_, i) => i !== index));
+    expect(fileTableWidth(grown)).toBe(1840);
+    const shrunk = resizeFileColumnWidths(wide, index, wide[index] - 40, 1800);
+    expect(shrunk[index]).toBe(wide[index] - 40);
+    expect(fileTableWidth(shrunk)).toBe(1800);
+  }
 });
 
 test("file headers toggle sorting independently of resizing and preserve selected paths", async ({ page }) => {
@@ -109,6 +128,21 @@ test("file headers toggle sorting independently of resizing and preserve selecte
   await expect(rows).toHaveText(["dir2", "dir10", ".hidden", "file2.txt", "file10.txt", "link"]);
   await sort("类型").click();
   await expect(rows.first()).toHaveText("link");
+  // A maximized window must fill the visible SFTP list, without a blank strip.
+  const list = page.locator(".file-list");
+  const layout = () => list.evaluate(el => {
+    const table = el.querySelector("table")!;
+    const row = table.querySelector("tbody tr")!;
+    return { client: el.clientWidth, scroll: el.scrollWidth, table: table.offsetWidth,
+      row: Math.round(row.getBoundingClientRect().width) };
+  });
+  await page.setViewportSize({ width: 2400, height: 920 });
+  await expect.poll(async () => {
+    const geometry = await layout();
+    return Math.abs(geometry.table - geometry.client) <= 1
+      && Math.abs(geometry.row - geometry.client) <= 1
+      && geometry.scroll <= geometry.client + 1;
+  }).toBe(true);
   // The right edge remains a resize-only target.
   const grip = table.getByRole("separator", { name: "调整列宽：文件名", exact: true });
   await grip.scrollIntoViewIfNeeded();
@@ -121,6 +155,18 @@ test("file headers toggle sorting independently of resizing and preserve selecte
   await expect.poll(async () => Math.round((await headers.first().boundingBox())!.width)).toBe(Math.round(width + 40));
   await expect(headers.nth(2)).toHaveAttribute("aria-sort", "descending");
   await expect(rows.first()).toHaveText("link");
+  // A narrower viewport must retain the user widths and allow horizontal scroll.
+  await page.setViewportSize({ width: 1024, height: 920 });
+  await expect.poll(async () => {
+    const geometry = await layout();
+    return geometry.scroll > geometry.client && geometry.table > geometry.client;
+  }).toBe(true);
+  await page.setViewportSize({ width: 2600, height: 920 });
+  await expect.poll(async () => {
+    const geometry = await layout();
+    return Math.abs(geometry.table - geometry.client) <= 1
+      && Math.abs(geometry.row - geometry.client) <= 1;
+  }).toBe(true);
   expect(await page.evaluate(() => (window as any).__fileListCalls())).toBe(calls);
   await sort("文件名").click();
   await sort("文件名").click();

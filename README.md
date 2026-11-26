@@ -16,7 +16,7 @@ Install the [latest stable release](https://github.com/xzcode/shell-ex/releases/
 | Windows (x64) | `.exe` (NSIS) |
 | Linux (x64) | `.deb` |
 
-The release page includes SHA-256 checksums and build provenance for each installer. See [all releases](https://github.com/xzcode/shell-ex/releases) and the [v0.4.15 release notes](docs/releases/v0.4.15.md). macOS builds use ad-hoc signing, not Apple notarization; Windows builds may display an unrecognized-publisher warning. The Linux package targets compatible Debian-based systems.
+The release page includes SHA-256 checksums and build provenance for each installer. See [all releases](https://github.com/xzcode/shell-ex/releases) and the [v0.4.16 release notes](docs/releases/v0.4.16.md). macOS builds use ad-hoc signing, not Apple notarization; Windows builds may display an unrecognized-publisher warning. The Linux package targets compatible Debian-based systems.
 
 ## Preview
 
