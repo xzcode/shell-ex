@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, errorText } from "./api";
 import { tr, setLocaleOverride, useLocale, type Locale } from "./i18n";
 import { MonitorPanel } from "./MonitorPanel";
@@ -16,21 +16,27 @@ export function DetachedMonitor() {
   useLocale();
   const [context, setContext] = useState<MonitorWindowContext | null>(null);
   const [error, setError] = useState("");
+  const [docking, setDocking] = useState(false);
+  const dockingRef = useRef(false);
+  const contextGeneration = useRef(0);
   useEffect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     async function sync() {
+      const generation = contextGeneration.current;
       try {
         const value = await api<MonitorWindowContext | null>("monitor_window_context");
         if (disposed) return;
-        setContext(value);
-        setError("");
-        if (value) {
+        if (generation === contextGeneration.current && !dockingRef.current) {
+          setContext(value);
+          setError("");
+        }
+        if (value && generation === contextGeneration.current && !dockingRef.current) {
           setLocaleOverride(value.language);
           document.documentElement.dataset.theme = value.theme;
         }
       } catch (e) {
-        if (!disposed) {
+        if (!disposed && generation === contextGeneration.current && !dockingRef.current) {
           setContext(null);
           setError(errorText(e));
         }
@@ -45,10 +51,21 @@ export function DetachedMonitor() {
     };
   }, []);
   async function dock() {
-    try { await api("monitor_window_dock"); }
-    catch (e) { setError(errorText(e)); }
+    if (dockingRef.current) return;
+    dockingRef.current = true;
+    contextGeneration.current += 1;
+    setDocking(true);
+    try {
+      await api("monitor_window_dock");
+      setContext(null);
+    } catch (e) { setError(errorText(e)); }
+    finally {
+      contextGeneration.current += 1;
+      dockingRef.current = false;
+      setDocking(false);
+    }
   }
-  const session = context?.session
+  const session = !docking && context?.session
     ? { ...context.session, local: false, status: "connected" }
     : null;
   return <div className="detached-monitor-window">
@@ -59,6 +76,7 @@ export function DetachedMonitor() {
       notify={(message) => setError(message)}
       onClose={() => void dock()}
       onDock={() => void dock()}
+      docking={docking}
     />
     <div className="detached-monitor-note">{tr("跟随主窗口当前 SSH 会话 · 独立监控窗口仅查看数据")}</div>
   </div>;

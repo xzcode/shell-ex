@@ -131,7 +131,7 @@ export default function App() {
     undefined,
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [monitorMode, setMonitorMode] = useState<"docked" | "opening" | "detached">("docked");
+  const [monitorMode, setMonitorMode] = useState<"docked" | "opening" | "detached" | "docking">("docked");
   const [palette, setPalette] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
   const [panel, setPanel] = useState("files");
@@ -195,11 +195,14 @@ export default function App() {
     }
   }
   async function dockMonitor() {
+    if (monitorMode !== "detached") return;
+    setMonitorMode("docking");
     try {
       await api("monitor_window_dock");
       setMonitorMode("docked");
       setWorkspace((w) => ({ ...w, monitorVisible: true }));
     } catch (e) {
+      setMonitorMode("detached");
       notify(errorText(e), "error");
     }
   }
@@ -952,7 +955,7 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark">›_</span>
           <strong>Shell EX</strong>
-          <span className="version-tag">0.4.9</span>
+          <span className="version-tag">0.4.10</span>
         </div>
         {macTitlebar && <div className="titlebar-drag" data-tauri-drag-region="" aria-hidden="true" />}
         <div className="header-actions">
@@ -1420,7 +1423,7 @@ export default function App() {
           <IconButton
             title={monitorMode === "detached" ? tr("停靠监控面板") : tr("显示监控面板")}
             active={workspace.monitorVisible || monitorMode === "detached"}
-            disabled={monitorMode === "opening"}
+            disabled={monitorMode === "opening" || monitorMode === "docking"}
             onClick={() => {
               if (monitorMode === "detached") void dockMonitor();
               else setWorkspace((w) => ({ ...w, monitorVisible: !w.monitorVisible }));

@@ -2201,9 +2201,12 @@ tbody tr.selected {
 }
 .snippet-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 340px));
+  justify-content: start;
+  align-content: start;
+  align-items: start;
   gap: 10px;
-  padding: 12px;
+  padding: 10px 12px;
 }
 .snippet-grid:empty {
   display: none;
@@ -2632,19 +2635,9 @@ select:not([multiple]) {
   padding:5px 4px; border-bottom:1px solid var(--border-soft);
   font-variant-numeric:tabular-nums; font-size:10px;
 }
-.monitor-process-mini th:nth-child(1) { width:24%; }
-.monitor-process-mini th:nth-child(2) { width:21%; }
-.monitor-process-mini th:nth-child(3) { width:55%; }
-.monitor-process-mini td:last-child {
-  overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
-  max-width:0; color:var(--text);
-}
 .monitor-mount-table { max-height:185px; overflow:auto; }
 .monitor-mount-table table { width:100%; table-layout:fixed; }
 .monitor-mount-table th,.monitor-mount-table td { padding:5px 3px; font-size:9px; }
-.monitor-mount-table th:nth-child(1) { width:27%; }
-.monitor-mount-table th:nth-child(2) { width:42%; }
-.monitor-mount-table th:nth-child(3) { width:31%; }
 .monitor-mount-table td:nth-child(1) { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); }
 .monitor-mount-usage { display:flex; align-items:center; gap:6px; }
 .monitor-mount-usage > span { min-width:28px; text-align:right; }
@@ -3010,3 +3003,41 @@ body.shell-resizing, body.shell-resizing * {
 .resizable-transfer-table .transfer-name small { max-width: none; }
 .resizable-transfer-table .row-actions { white-space: nowrap; }
 .resizable-transfer-table .row-actions .icon-button { flex-shrink: 0; }
+
+/* Responsive axes use real sample timestamps and a shared unit on the
+   network scale. Text does not stretch when the monitor is resized. */
+.monitor-chart {
+  display: grid; grid-template-columns: max-content minmax(0,1fr);
+  grid-template-rows: 112px auto; gap: 5px 8px;
+  margin: 13px 0 2px; min-width: 0; font-size: 9px;
+  color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.monitor-chart-y { position: relative; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; line-height: 1; margin-block: -4px; white-space: nowrap; }
+.monitor-chart-plot { position: relative; min-width: 0; }
+.monitor-chart-plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.monitor-chart-dot { position:absolute; width:5px; height:5px; border-radius:50%; transform:translate(-50%,-50%); }
+.monitor-chart-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+.monitor-chart-unit { font-size:9px; white-space:nowrap; text-align:right; }
+.monitor-chart-x { display:flex; justify-content:space-between; gap:3px; min-width:0; white-space:nowrap; font-size:9px; }
+.monitor-chart-x span:nth-child(2) { text-align:center; }
+.monitor-table-scroll { width:100%; min-width:0; overflow-x:auto; }
+.monitor-card .resizable-monitor-table, .process-table .resizable-monitor-table {
+  width:100%; table-layout:fixed; border-collapse:separate; border-spacing:0;
+}
+.resizable-monitor-table th.resizable-monitor-heading { padding:0; overflow:hidden; }
+.resizable-monitor-table td { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.resizable-monitor-table th.monitor-table-filler, .resizable-monitor-table td.monitor-table-filler { padding:0; width:auto; }
+.resizable-monitor-table td[title] { color:var(--text); }
+.monitor-card .resizable-monitor-table .file-heading-content { padding-left:4px; min-height:26px; }
+.monitor-card .resizable-monitor-table .file-heading-content > span { font-size:10px; }
+
+/* Compact shortcut cards: actions stay adjacent to the command, never at the
+   far edge of an otherwise empty workspace. */
+.snippet > header { flex-wrap: nowrap; min-width: 0; }
+.snippet > header > svg, .snippet > header > .icon-button { flex-shrink: 0; }
+.snippet > header > strong { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+.snippet > header > .snippet-group { flex: 0 1 auto; max-width: 40%; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; background: var(--panel-alt); border-radius: 3px; padding: 3px 5px; }
+.snippet > .snippet-command { margin: 9px 0 8px; min-width: 0; max-height: 96px; min-height: 34px; padding: 7px 8px; border: 1px solid var(--border-soft); border-radius: 4px; background: var(--terminal); color: var(--text); font: 10px/1.6 ui-monospace,Menlo,Consolas,monospace; white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; }
+.snippet > .snippet-command code { font: inherit; }
+.snippet > footer { display:flex; justify-content:flex-start; align-items:center; flex-wrap:wrap; gap:6px; padding-top:2px; }
+.snippet > footer > button { flex: 0 0 auto; }

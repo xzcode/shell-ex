@@ -8,6 +8,27 @@ import {
 import type { AppSettings, MonitorSnapshot, Notify, Session } from "./types";
 import { api, bytes, confirmAction, errorText } from "./api";
 import { Empty, ErrorBox, IconButton, Modal } from "./ui";
+import { MonitorChart } from "./MonitorChart";
+import { MonitorTable } from "./MonitorTable";
+
+const miniColumns = [
+  { label: "内存", width: 80, min: 64 },
+  { label: "CPU", width: 65, min: 48 },
+  { label: "命令", width: 145, min: 80 },
+];
+const mountColumns = [
+  { label: "路径", width: 105, min: 70 },
+  { label: "可用 / 总量", width: 120, min: 95 },
+  { label: "已用", width: 95, min: 75 },
+];
+const processColumns = [
+  { label: "PID", width: 65, min: 50 },
+  { label: "用户", width: 95, min: 65 },
+  { label: "CPU", width: 70, min: 48 },
+  { label: "内存", width: 75, min: 60 },
+  { label: "命令", width: 220, min: 100 },
+  { label: "操作", width: 85, min: 65 },
+];
 
 function percentage(used: number, total: number): number {
   return total > 0 ? Math.min(100, Math.max(0, used / total * 100)) : 0;
@@ -31,35 +52,21 @@ function MetricCard({ icon, label, percent, detail, status = "normal" }: {
     </div>
   );
 }
-function NetworkChart({ samples }: { samples: { rx: number; tx: number }[] }) {
-  const max = Math.max(1, ...samples.flatMap((v) => [v.rx, v.tx]));
-  const line = (name: "rx" | "tx") =>
-    samples.map((item, i) =>
-      (i / Math.max(1, samples.length - 1) * 300).toFixed(1) + "," +
-      (67 - item[name] / max * 59).toFixed(1)
-    ).join(" ");
-  return (
-    <svg className="monitor-network-chart" viewBox="0 0 300 72" preserveAspectRatio="none" role="img" aria-label={tr("最近网络吞吐量趋势")}>
-      <path d="M0 8H300M0 38H300M0 67H300" fill="none" stroke="var(--border)" strokeWidth="0.7" />
-      <polyline points={line("rx")} fill="none" stroke="var(--green)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-      <polyline points={line("tx")} fill="none" stroke="var(--amber)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-    </svg>
-  );
-}
-export function MonitorPanel({ session, settings, notify, onClose, width, onDetach, onDock }: {
+export function MonitorPanel({ session, settings, notify, onClose, width, onDetach, onDock, docking = false }: {
   session: Pick<Session, "id" | "name" | "local" | "status"> | null;
   settings: Pick<AppSettings, "monitorInterval">;
   width?: number;
   onDetach?: () => void;
   onDock?: () => void;
+  docking?: boolean;
   notify: Notify;
   onClose: () => void;
 }) {
   const [snapshot, setSnapshot] = useState<MonitorSnapshot | null>(null);
   const [error, setError] = useState("");
   const [paused, setPaused] = useState(false);
-  const [cpuHistory, setCpuHistory] = useState<number[]>([]);
-  const [networkHistory, setNetworkHistory] = useState<{ rx: number; tx: number }[]>([]);
+  const [cpuHistory, setCpuHistory] = useState<{ at: number; value: number }[]>([]);
+  const [networkHistory, setNetworkHistory] = useState<{ at: number; rx: number; tx: number }[]>([]);
   const [networkRate, setNetworkRate] = useState({ rx: 0, tx: 0 });
   const [selectedInterface, setSelectedInterface] = useState("all");
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
@@ -88,7 +95,7 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
     setNetworkHistory([]);
   }, [selectedInterface]);
   useEffect(() => {
-    if (!remote || paused) return;
+    if (!remote || paused || docking) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
@@ -106,7 +113,7 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
         setSampleDuration(Math.round(performance.now() - started));
         setLastUpdated(now);
         if (data.cpuPercent != null) {
-          setCpuHistory((h) => [...h.slice(-39), data.cpuPercent!]);
+          setCpuHistory((h) => [...h.slice(-39), { at: now, value: data.cpuPercent! }]);
         }
         const iface = data.networkInterfaces?.find((item) => item.name === selectedInterface);
         const counters = selectedInterface === "all"
@@ -119,7 +126,7 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
               tx: (counters.tx - previous.current.tx) / elapsed,
             };
             setNetworkRate(rate);
-            setNetworkHistory((h) => [...h.slice(-39), rate]);
+            setNetworkHistory((h) => [...h.slice(-39), { at: now, ...rate }]);
           }
           previous.current = { ...counters, at: now };
         } else {
@@ -134,7 +141,7 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
     };
     void tick();
     return () => { disposed = true; clearTimeout(timer); };
-  }, [remote?.id, paused, settings.monitorInterval, selectedInterface, refresh, detached]);
+  }, [remote?.id, paused, settings.monitorInterval, selectedInterface, refresh, detached, docking]);
 
   const mem = snapshot ? percentage(snapshot.memoryUsed, snapshot.memoryTotal) : null;
   const cpu = snapshot?.cpuPercent ?? null;
@@ -156,7 +163,7 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
             {paused ? <Play size={13} /> : <Pause size={13} />}
           </IconButton>
           {onDetach && <IconButton title={tr("分离监控面板")} onClick={onDetach}><ExternalLink size={14} /></IconButton>}
-          {onDock ? <IconButton title={tr("停靠到工作台")} onClick={onDock}><PanelRight size={14} /></IconButton>
+          {onDock ? <IconButton title={tr("停靠到工作台")} disabled={docking} onClick={onDock}><PanelRight size={14} /></IconButton>
             : <IconButton title={tr("隐藏监控")} onClick={onClose}><X size={14} /></IconButton>}
         </div>
       </header>
@@ -207,11 +214,8 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
               <h4><Gauge size={13} />{" "}{tr("CPU 近期趋势")}</h4>
               <small className="muted">{cpuHistory.length ? cpuHistory.length + tr(" 次采样") : tr("等待采样")}</small>
             </div>
-            <svg className="monitor-cpu-chart" viewBox="0 0 300 46" preserveAspectRatio="none" role="img" aria-label={tr("最近 CPU 使用率趋势")}>
-              <path d="M0 1H300M0 23H300M0 45H300" fill="none" stroke="var(--border)" strokeWidth="0.7" />
-              <polyline fill="none" stroke="var(--accent)" strokeWidth="2" vectorEffect="non-scaling-stroke"
-                points={cpuHistory.map((n, i) => (i / Math.max(1, cpuHistory.length - 1) * 300).toFixed(1) + "," + (45 - n / 100 * 44).toFixed(1)).join(" ")} />
-            </svg>
+            <MonitorChart kind="cpu" interval={settings.monitorInterval}
+              samples={cpuHistory.map((sample) => ({ at: sample.at, values: [sample.value] }))} />
           </section>
           <section className="monitor-card">
             <div className="monitor-card-heading">
@@ -227,7 +231,8 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
               <span><ArrowDown size={13} className="green" />{" "}{tr("下载")}{" "}<strong>{snapshot && networkHistory.length ? bytes(networkRate.rx) + "/s" : tr("采集中…")}</strong></span>
               <span><ArrowUp size={13} className="accent" />{" "}{tr("上传")}{" "}<strong>{snapshot && networkHistory.length ? bytes(networkRate.tx) + "/s" : tr("采集中…")}</strong></span>
             </div>
-            <NetworkChart samples={networkHistory} />
+            <MonitorChart kind="network" interval={settings.monitorInterval}
+              samples={networkHistory.map((sample) => ({ at: sample.at, values: [sample.rx, sample.tx] }))} />
           </section>
           <section className="monitor-card">
             <div className="monitor-card-heading">
@@ -235,23 +240,23 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
               <button className="text-button" onClick={() => setShowProcesses(true)}
                 disabled={!snapshot?.processes.length}>{tr("全部进程")}</button>
             </div>
-            <table className="monitor-process-mini">
-              <thead><tr><th>{tr("内存")}</th><th>CPU</th><th>{tr("命令")}</th></tr></thead>
-              <tbody>
+            <div className="monitor-table-scroll scroll-area">
+              <MonitorTable tableId="mini-process" columns={miniColumns} className="monitor-process-mini">
                 {topProcesses.map((p) => <tr key={p.pid}>
                   <td>{snapshot ? bytes(snapshot.memoryTotal * p.memory / 100) : "—"}</td>
                   <td>{p.cpu.toFixed(1)}%</td>
                   <td title={p.command}>{p.command}</td>
+                  <td className="monitor-table-filler" aria-hidden="true" />
                 </tr>)}
-              </tbody>
-            </table>
+              </MonitorTable>
+            </div>
             {!topProcesses.length && <small className="muted">{tr("暂无进程数据")}</small>}
           </section>
           <section className="monitor-card">
             <h4><HardDrive size={13} />{" "}{tr("磁盘挂载点")}</h4>
             <div className="monitor-mount-table scroll-area">
-              <table><thead><tr><th>{tr("路径")}</th><th>{tr("可用 / 总量")}</th><th>{tr("已用")}</th></tr></thead>
-                <tbody>{mounts.map((mount, i) => {
+              <MonitorTable tableId="mounts" columns={mountColumns}>
+                {mounts.map((mount, i) => {
                   const pct = percentage(mount.used, mount.total);
                   return <tr key={mount.path + i}>
                     <td title={mount.path}>{mount.path}</td>
@@ -259,9 +264,10 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
                     <td><div className="monitor-mount-usage"><span>{pct.toFixed(0)}%</span>
                       <div className="monitor-bar"><span className={"monitor-bar-fill " + (pct >= 90 ? "danger" : pct >= 80 ? "warn" : "normal")}
                         style={{ width: pct + "%" }} /></div></div></td>
+                    <td className="monitor-table-filler" aria-hidden="true" />
                   </tr>;
-                })}</tbody>
-              </table>
+                })}
+              </MonitorTable>
             </div>
           </section>
           <footer className="monitor-footer">
@@ -274,8 +280,8 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
       {showProcesses && snapshot && remote && (
         <Modal title={tr("进程 · ") + snapshot.hostname} onClose={() => setShowProcesses(false)} wide>
           <div className="process-table scroll-area">
-            <table><thead><tr><th>PID</th><th>{tr("用户")}</th><th>CPU</th><th>{tr("内存")}</th><th>{tr("命令")}</th>{!detached && <th>{tr("操作")}</th>}</tr></thead>
-              <tbody>{snapshot.processes.map((p) => <tr key={p.pid}>
+            <MonitorTable tableId={detached ? "processes-readonly" : "processes"} columns={detached ? processColumns.slice(0, 5) : processColumns}>
+              {snapshot.processes.map((p) => <tr key={p.pid}>
                 <td>{p.pid}</td><td>{p.user}</td><td>{p.cpu.toFixed(1)}%</td>
                 <td>{p.memory.toFixed(1)}%</td>
                 <td className="mono truncate" title={p.command}>{p.command}</td>
@@ -288,8 +294,9 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
                     notify(tr("TERM 信号已发送。"), "success");
                   } catch (e) { notify(errorText(e), "error"); }
                 }}>{tr("终止")}</button></td>}
-              </tr>)}</tbody>
-            </table>
+                <td className="monitor-table-filler" aria-hidden="true" />
+              </tr>)}
+            </MonitorTable>
           </div>
         </Modal>
       )}

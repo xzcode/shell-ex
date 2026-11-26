@@ -715,5 +715,9 @@ export const en: Readonly<Record<string, string>> = {
   "仅可打开已完成的下载文件": "Only completed downloads can be opened",
   "下载的文件或所在文件夹已不存在": "The downloaded file or its folder no longer exists",
   "下载文件的本地路径已发生变化": "The downloaded file path has changed",
-  "无法打开已下载文件或文件夹": "Could not open the downloaded file or folder"
+  "无法打开已下载文件或文件夹": "Could not open the downloaded file or folder",
+  "纵轴刻度": "Y-axis scale",
+  "时间轴": "Time axis",
+  "命令已复制。": "Command copied.",
+  "复制命令": "Copy command"
 };

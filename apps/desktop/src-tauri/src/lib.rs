@@ -1214,21 +1214,32 @@ pub fn run() {
         .build(context)
         .expect("Shell EX could not initialize its local application data");
     app.run(|handle, event| {
-        if let tauri::RunEvent::WindowEvent {
-            label,
-            event: tauri::WindowEvent::Destroyed,
-            ..
-        } = &event
-        {
-            if label == monitor_window::LABEL {
-                handle.state::<AppState>().detached_monitor.clear();
-            } else if label == "main" {
-                // Closing the main workspace must not leave a second window or
-                // remote sessions alive indefinitely.
-                handle.state::<AppState>().detached_monitor.clear();
-                if let Some(window) = handle.get_webview_window(monitor_window::LABEL) {
-                    let _ = window.destroy();
+        if let tauri::RunEvent::WindowEvent { label, event, .. } = &event {
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. }
+                    if label == monitor_window::LABEL =>
+                {
+                    // The native close button follows the same hide/reuse
+                    // path as the Dock button, never destroying the live webview.
+                    api.prevent_close();
+                    let app = handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let state = app.state::<AppState>();
+                        let _ = monitor_window::monitor_window_dock(app.clone(), state).await;
+                    });
                 }
+                tauri::WindowEvent::Destroyed if label == monitor_window::LABEL => {
+                    handle.state::<AppState>().detached_monitor.clear();
+                }
+                tauri::WindowEvent::Destroyed if label == "main" => {
+                    handle.state::<AppState>().detached_monitor.clear();
+                    // A hidden monitor window must not keep the application
+                    // alive. Use the normal application exit lifecycle.
+                    if handle.get_webview_window(monitor_window::LABEL).is_some() {
+                        handle.exit(0);
+                    }
+                }
+                _ => {}
             }
         }
         if let tauri::RunEvent::Exit = event {

@@ -396,8 +396,8 @@ export function SnippetPanel({
           <div className="snippet" key={s.id}>
             <header>
               <Code2 size={15} />
-              <strong>{s.name}</strong>
-              <span>{s.group === "常用命令" ? tr("常用命令") : s.group}</span>
+              <strong title={s.name}>{s.name}</strong>
+              <span className="snippet-group" title={s.group}>{s.group === "常用命令" ? tr("常用命令") : s.group}</span>
               <IconButton title={tr("编辑命令")} onClick={() => setEditing({ ...s })}>
                 <Pencil size={13} />
               </IconButton>
@@ -417,13 +417,21 @@ export function SnippetPanel({
                 <Trash2 size={13} />
               </IconButton>
             </header>
-            <code>{s.command}</code>
+            <pre className="snippet-command scroll-area"><code>{s.command}</code></pre>
             <footer>
               <button
-                className="text-button"
+                className="button secondary small snippet-insert"
+                disabled={!session || session.status !== "connected"}
+                title={session && session.status === "connected" ? tr("插入终端") : tr("请先选择一个已连接的终端。")}
                 onClick={() => void insert(s, false)}
-              >{tr("插入终端")}<ArrowRight size={13} />
+              ><ArrowRight size={13} />{tr("插入终端")}
               </button>
+              <button className="button subtle small" onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(s.command);
+                  notify(tr("命令已复制。"), "success");
+                } catch (e) { notify(errorText(e), "error"); }
+              }}><Copy size={13} />{tr("复制命令")}</button>
             </footer>
           </div>
         ))}
