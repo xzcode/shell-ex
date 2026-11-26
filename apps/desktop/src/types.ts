@@ -92,9 +92,35 @@ export type Transfer = {
 export type ProcessInfo = {
   pid: number;
   user: string;
-  cpu: number;
-  memory: number;
+  cpu: number | null;
+  memory: number | null;
+  rssBytes?: number;
   command: string;
+};
+export type DiskMount = {
+  path: string;
+  source: string;
+  fsType: string;
+  category: "local" | "network" | "virtual" | "other";
+  deviceId?: string | null;
+  duplicate: boolean;
+  total: number;
+  used: number;
+  available: number;
+};
+export type DiskIo = {
+  name: string;
+  deviceId: string;
+  layer: "device" | "logical";
+  readBytesPerSec: number | null;
+  writeBytesPerSec: number | null;
+  readIops: number | null;
+  writeIops: number | null;
+  utilization: number | null;
+  awaitMs: number | null;
+  readAwaitMs: number | null;
+  writeAwaitMs: number | null;
+  queueDepth: number | null;
 };
 export type MonitorSnapshot = {
   hostname: string;
@@ -113,7 +139,11 @@ export type MonitorSnapshot = {
   networkRx: number;
   networkTx: number;
   networkInterfaces?: { name: string; rx: number; tx: number }[];
-  diskMounts?: { path: string; total: number; used: number; available: number }[];
+  diskMounts?: DiskMount[];
+  storagePartial?: boolean;
+  diskIo?: DiskIo[];
+  processCount?: number;
+  processTruncated?: boolean;
   processes: ProcessInfo[];
 };
 export type DockerContainer = {

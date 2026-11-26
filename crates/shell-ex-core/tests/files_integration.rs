@@ -445,3 +445,46 @@ async fn file_menu_archive_recursive_delete_and_no_overwrite() {
     assert_eq!(std::fs::read(&occupied).unwrap(), b"keep local");
     ssh.disconnect(&session).await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires isolated ssh fixture"]
+async fn monitor_storage_io_and_process_interval_sampling() {
+    let (ssh, session) = connection().await;
+    let monitor = MonitorService::new(ssh.clone());
+    let first = monitor.snapshot(&session).await.unwrap();
+    assert!(first.memory_total > 0);
+    assert!(first.process_count >= first.processes.len());
+    assert!(
+        !first.processes.is_empty(),
+        "collector did not return visible processes"
+    );
+    assert!(first.processes.iter().all(|p| p.cpu.is_none()));
+    assert!(first.processes.iter().any(|p| p.rss_bytes > 0));
+    for mount in &first.disk_mounts {
+        assert!(!mount.fs_type.is_empty());
+        if matches!(mount.fs_type.as_str(), "overlay" | "tmpfs" | "devtmpfs") {
+            assert_eq!(mount.category, "virtual");
+        }
+    }
+    assert!(first.disk_io.iter().all(|d| d.utilization.is_none()));
+    sleep(Duration::from_millis(300)).await;
+    let second = monitor.snapshot(&session).await.unwrap();
+    assert!(second.cpu_percent.is_some());
+    assert!(
+        second.processes.iter().any(|p| p.cpu.is_some()),
+        "no comparable proc counters"
+    );
+    for disk in &second.disk_io {
+        assert!(!disk.name.starts_with("loop") && !disk.name.starts_with("zram"));
+        if first
+            .disk_io
+            .iter()
+            .any(|d| d.device_id == disk.device_id && d.name == disk.name)
+        {
+            assert!(disk.read_bytes_per_sec.is_some());
+            assert!(disk.utilization.is_some_and(|n| (0.0..=100.0).contains(&n)));
+        }
+    }
+    monitor.forget_session(&session).await;
+    ssh.disconnect(&session).await.unwrap();
+}

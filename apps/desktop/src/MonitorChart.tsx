@@ -17,13 +17,13 @@ function networkScale(samples: Sample[]) {
 }
 
 export function MonitorChart({ kind, samples, interval }: {
-  kind: "cpu" | "network"; samples: Sample[]; interval: number;
+  kind: "cpu" | "network" | "disk" | "disk-util"; samples: Sample[]; interval: number;
 }) {
-  const network = kind === "network";
+  const network = kind === "network" || kind === "disk";
   const scale = network ? networkScale(samples) : { max: 100, unit: "%", divisor: 1 };
   const series: Series[] = network
-    ? [{ color: colors.rx, label: tr("下载") }, { color: colors.tx, label: tr("上传") }]
-    : [{ color: colors.cpu, label: "CPU" }];
+    ? [{ color: colors.rx, label: tr(kind === "disk" ? "读取" : "下载") }, { color: colors.tx, label: tr(kind === "disk" ? "写入" : "上传") }]
+    : [{ color: colors.cpu, label: kind === "disk-util" ? tr("设备忙碌率") : "CPU" }];
   const last = samples.at(-1)?.at ?? 0;
   const first = samples[0]?.at ?? 0;
   const start = first < last ? first : last - Math.max(2, interval) * 1000;
@@ -34,7 +34,7 @@ export function MonitorChart({ kind, samples, interval }: {
   const x = (sample: Sample) => Math.max(0, Math.min(300, (sample.at - start) / span * 300));
   const y = (value: number) => 100 - Math.max(0, Math.min(1, value / scale.max)) * 100;
   return <div className="monitor-chart" data-chart={kind}
-    role="img" aria-label={network ? tr("最近网络吞吐量趋势") : tr("最近 CPU 使用率趋势")}>
+    role="img" aria-label={tr(kind === "disk" ? "磁盘读写趋势" : kind === "disk-util" ? "磁盘忙碌率趋势" : kind === "network" ? "最近网络吞吐量趋势" : "最近 CPU 使用率趋势")}>
     <div className="monitor-chart-y" aria-label={tr("纵轴刻度")}>
       {ticks.map((fraction) => <span key={fraction}>{number.format(scale.max * fraction / scale.divisor)}{network ? "" : "%"}</span>)}
     </div>

@@ -1,19 +1,23 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { tr } from "./i18n";
+import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
+import type { ProcessSort, ProcessSortKey } from "./monitorModel";
 import { ResizeHandle, clampWidth } from "./ResizeHandle";
 
-type Column = { label: string; width: number; min: number };
+type Column = { label: string; width: number; min: number; sortKey?: ProcessSortKey };
 type Props = {
   tableId: string;
   columns: readonly Column[];
   className?: string;
   children: ReactNode;
+  sort?: ProcessSort;
+  onSort?: (key: ProcessSortKey) => void;
 };
 
 /** Shared column preferences for the docked and detached monitor.
  * Native WebViews with a shared origin synchronize via storage events.
  * Otherwise each view retains its own preferences safely. */
-export function MonitorTable({ tableId, columns, className = "", children }: Props) {
+export function MonitorTable({ tableId, columns, className = "", children, sort, onSort }: Props) {
   const storageKey = "shell-ex-monitor-columns-" + tableId;
   function decode(raw: string | null) {
     let parsed: unknown = null;
@@ -46,9 +50,14 @@ export function MonitorTable({ tableId, columns, className = "", children }: Pro
       <col />
     </colgroup>
     <thead><tr>
-      {columns.map((column, index) => <th key={index} className="resizable-monitor-heading" title={tr(column.label)}>
+      {columns.map((column, index) => <th key={index} className="resizable-monitor-heading" title={tr(column.label)}
+        aria-sort={sort && sort.key === column.sortKey ? sort.direction === "asc" ? "ascending" : "descending" : undefined}>
         <div className="file-heading-content">
-          <span>{tr(column.label)}</span>
+          {column.sortKey && onSort ? <button type="button" className={"monitor-sort-button" + (sort?.key === column.sortKey ? " active" : "")}
+            aria-label={tr("按 {0} 排序", tr(column.label))} onClick={() => onSort(column.sortKey!)}>
+            <span>{tr(column.label)}</span>
+            {sort?.key === column.sortKey ? (sort?.direction === "asc" ? <ChevronUp size={11} /> : <ChevronDown size={11} />) : <ChevronsUpDown size={11} />}
+          </button> : <span>{tr(column.label)}</span>}
           <ResizeHandle column label={tr("调整列宽：{0}", tr(column.label))}
             value={widths[index]} min={column.min} max={1400}
             onChange={(width) => change(index, width)}

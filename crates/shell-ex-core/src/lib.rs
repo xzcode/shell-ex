@@ -9,6 +9,7 @@ pub mod import;
 pub mod local_vault;
 pub mod models;
 pub mod monitor;
+mod monitor_storage;
 pub mod pty;
 pub mod ssh;
 pub mod storage;

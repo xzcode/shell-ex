@@ -143,8 +143,8 @@ test("detached webview mounts only read-only monitoring and can return to dock",
           uptime: 120, load: [0.1, 0.2, 0.3], cpuPercent: 12, memoryTotal: 8192,
           memoryUsed: 2048, swapTotal: 0, swapUsed: 0, diskTotal: 16384,
           diskUsed: 8192, networkRx: samples * 4096, networkTx: samples * 2048, networkInterfaces: [],
-          diskMounts: [{ path: "/var/lib/docker/example/long/mount/path", total: 16384, used: 8192, available: 8192 }],
-          processes: [{ pid: 42, user: "test", cpu: 1, memory: 1, command: "fixture" }],
+          diskMounts: [{ path: "/data/example/long/mount/path", source: "/dev/vda1", fsType: "xfs", category: "local", duplicate: false, total: 16384, used: 8192, available: 8192 }],
+          processes: [{ pid: 42, user: "test", cpu: 1, memory: 1, rssBytes: 1024, command: "fixture" }],
         };
         }
         if (cmd === "monitor_window_dock") { docked = true; context = null; return null; }

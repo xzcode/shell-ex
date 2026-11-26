@@ -1,5 +1,5 @@
 import { tr, getLocale } from "./i18n";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Activity, Cpu, MemoryStick, HardDrive, ArrowDown, ArrowUp,
   Clock3, Pause, Play, X, RefreshCw, Server, Network,
@@ -10,25 +10,24 @@ import { api, bytes, confirmAction, errorText } from "./api";
 import { Empty, ErrorBox, IconButton, Modal } from "./ui";
 import { MonitorChart } from "./MonitorChart";
 import { MonitorTable } from "./MonitorTable";
+import { StorageMonitor, DiskIoMonitor } from "./StorageMonitor";
+import { appendDiskHistory, sortProcesses, useMonitorPreference, type DiskHistory, type ProcessSort, type ProcessSortKey } from "./monitorModel";
 
 const miniColumns = [
-  { label: "内存", width: 80, min: 64 },
-  { label: "CPU", width: 65, min: 48 },
+  { label: "内存", width: 80, min: 64, sortKey: "memory" },
+  { label: "CPU", width: 65, min: 48, sortKey: "cpu" },
   { label: "命令", width: 145, min: 80 },
-];
-const mountColumns = [
-  { label: "路径", width: 105, min: 70 },
-  { label: "可用 / 总量", width: 120, min: 95 },
-  { label: "已用", width: 95, min: 75 },
-];
+] as const;
 const processColumns = [
-  { label: "PID", width: 65, min: 50 },
-  { label: "用户", width: 95, min: 65 },
-  { label: "CPU", width: 70, min: 48 },
-  { label: "内存", width: 75, min: 60 },
-  { label: "命令", width: 220, min: 100 },
+  { label: "PID", width: 65, min: 50, sortKey: "pid" },
+  { label: "用户", width: 95, min: 65, sortKey: "user" },
+  { label: "CPU", width: 70, min: 48, sortKey: "cpu" },
+  { label: "内存", width: 90, min: 60, sortKey: "memory" },
+  { label: "命令", width: 220, min: 100, sortKey: "command" },
   { label: "操作", width: 85, min: 65 },
-];
+] as const;
+const PAGE_SIZE = 100;
+const pctText = (value: number | null | undefined) => value == null ? "—" : value.toFixed(1) + "%";
 
 function percentage(used: number, total: number): number {
   return total > 0 ? Math.min(100, Math.max(0, used / total * 100)) : 0;
@@ -72,6 +71,11 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [sampleDuration, setSampleDuration] = useState<number | null>(null);
   const [showProcesses, setShowProcesses] = useState(false);
+  const [processOrder, setProcessOrder] = useMonitorPreference("process-order-v1", ["cpu", "memory"] as const, "cpu");
+  const [processSort, setProcessSort] = useState<ProcessSort>({ key: "cpu", direction: "desc" });
+  const [processQuery, setProcessQuery] = useState("");
+  const [processPage, setProcessPage] = useState(0);
+  const [diskHistory, setDiskHistory] = useState<DiskHistory>({});
   const previous = useRef<{ rx: number; tx: number; at: number } | null>(null);
   const [refresh, setRefresh] = useState(0);
   const remote = session && !session.local && session.status === "connected" ? session : null;
@@ -86,6 +90,9 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
     setLastUpdated(null);
     setSampleDuration(null);
     setShowProcesses(false);
+    setDiskHistory({});
+    setProcessQuery("");
+    setProcessPage(0);
     setNetworkRate({ rx: 0, tx: 0 });
     previous.current = null;
   }, [remote?.id]);
@@ -109,6 +116,7 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
         if (disposed) return;
         const now = Date.now();
         setSnapshot(data);
+        setDiskHistory((old) => appendDiskHistory(old, data.diskIo || [], now));
         setError("");
         setSampleDuration(Math.round(performance.now() - started));
         setLastUpdated(now);
@@ -146,11 +154,26 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
   const mem = snapshot ? percentage(snapshot.memoryUsed, snapshot.memoryTotal) : null;
   const cpu = snapshot?.cpuPercent ?? null;
   const swap = snapshot?.swapTotal ? percentage(snapshot.swapUsed || 0, snapshot.swapTotal) : null;
-  const rootDisk = snapshot ? percentage(snapshot.diskUsed, snapshot.diskTotal) : null;
-  const mounts = snapshot?.diskMounts?.length
-    ? snapshot.diskMounts
-    : snapshot ? [{ path: "/", total: snapshot.diskTotal, used: snapshot.diskUsed, available: Math.max(0, snapshot.diskTotal - snapshot.diskUsed) }] : [];
-  const topProcesses = [...(snapshot?.processes || [])].sort((a, b) => b.cpu - a.cpu).slice(0, 5);
+  const rootMount = snapshot?.diskMounts?.find((mount) => mount.path === "/");
+  const rootDisk = rootMount && rootMount.used + rootMount.available > 0
+    ? percentage(rootMount.used, rootMount.used + rootMount.available) : null;
+  const topProcesses = useMemo(() => sortProcesses((snapshot?.processes || []).filter((p) => processOrder === "cpu" ? p.cpu != null : p.rssBytes != null), { key: processOrder, direction: "desc" }).slice(0, 5), [snapshot, processOrder]);
+  const allProcesses = useMemo(() => showProcesses ? sortProcesses(snapshot?.processes || [], processSort, processQuery) : [],
+    [snapshot, showProcesses, processSort, processQuery]);
+  const pageCount = Math.max(1, Math.ceil(allProcesses.length / PAGE_SIZE));
+  const pageIndex = Math.min(processPage, pageCount - 1);
+  function openProcesses() {
+    setProcessSort({ key: processOrder, direction: "desc" });
+    setProcessPage(0);
+    setProcessQuery("");
+    setShowProcesses(true);
+  }
+  function changeProcessSort(key: ProcessSortKey) {
+    setProcessSort((old) => ({ key, direction: old.key === key
+      ? old.direction === "desc" ? "asc" : "desc"
+      : key === "cpu" || key === "memory" ? "desc" : "asc" }));
+    setProcessPage(0);
+  }
 
   return (
     <aside className="monitor-panel" style={width === undefined ? undefined : { width }} aria-label={tr("服务器监控")}>
@@ -205,8 +228,8 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
             <MetricCard icon={<Layers3 size={13} />} label={tr("交换")} percent={swap}
               detail={snapshot ? snapshot.swapTotal ? bytes(snapshot.swapUsed || 0) + " / " + bytes(snapshot.swapTotal) : tr("未配置 Swap") : "—"}
               status={swap != null && swap >= 85 ? "warn" : "normal"} />
-            <MetricCard icon={<HardDrive size={13} />} label={tr("根磁盘")} percent={rootDisk}
-              detail={snapshot ? bytes(snapshot.diskUsed) + " / " + bytes(snapshot.diskTotal) : "—"}
+            <MetricCard icon={<HardDrive size={13} />} label={tr("根文件系统")} percent={rootDisk}
+              detail={rootMount ? bytes(rootMount.used) + " / " + bytes(rootMount.total) + " · " + (rootMount.fsType || "—") : "—"}
               status={rootDisk != null && rootDisk >= 90 ? "danger" : rootDisk != null && rootDisk >= 80 ? "warn" : "normal"} />
           </div>
           <section className="monitor-card">
@@ -234,41 +257,31 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
             <MonitorChart kind="network" interval={settings.monitorInterval}
               samples={networkHistory.map((sample) => ({ at: sample.at, values: [sample.rx, sample.tx] }))} />
           </section>
+          <StorageMonitor snapshot={snapshot} />
+          <DiskIoMonitor key={remote.id} snapshot={snapshot} history={diskHistory} interval={settings.monitorInterval} />
           <section className="monitor-card">
-            <div className="monitor-card-heading">
-              <h4><Cpu size={13} />{" "}{tr("进程（CPU 排序）")}</h4>
-              <button className="text-button" onClick={() => setShowProcesses(true)}
+            <div className="monitor-card-heading monitor-flex-heading">
+              <h4><Cpu size={13} />{" "}{tr("进程")}</h4>
+              <button className="text-button" onClick={openProcesses}
                 disabled={!snapshot?.processes.length}>{tr("全部进程")}</button>
             </div>
+            <div className="monitor-process-order" role="group" aria-label={tr("进程排序")}>
+              <button type="button" aria-pressed={processOrder === "cpu"} onClick={() => setProcessOrder("cpu")}>{tr("CPU 排序")}</button>
+              <button type="button" aria-pressed={processOrder === "memory"} onClick={() => setProcessOrder("memory")}>{tr("内存排序")}</button>
+            </div>
             <div className="monitor-table-scroll scroll-area">
-              <MonitorTable tableId="mini-process" columns={miniColumns} className="monitor-process-mini">
+              <MonitorTable tableId="mini-process" columns={miniColumns} className="monitor-process-mini"
+                sort={{ key: processOrder, direction: "desc" }} onSort={(key) => { if (key === "cpu" || key === "memory") setProcessOrder(key); }}>
                 {topProcesses.map((p) => <tr key={p.pid}>
-                  <td>{snapshot ? bytes(snapshot.memoryTotal * p.memory / 100) : "—"}</td>
-                  <td>{p.cpu.toFixed(1)}%</td>
+                  <td>{p.rssBytes == null ? "—" : bytes(p.rssBytes)}</td>
+                  <td>{pctText(p.cpu)}</td>
                   <td title={p.command}>{p.command}</td>
                   <td className="monitor-table-filler" aria-hidden="true" />
                 </tr>)}
               </MonitorTable>
             </div>
-            {!topProcesses.length && <small className="muted">{tr("暂无进程数据")}</small>}
-          </section>
-          <section className="monitor-card">
-            <h4><HardDrive size={13} />{" "}{tr("磁盘挂载点")}</h4>
-            <div className="monitor-mount-table scroll-area">
-              <MonitorTable tableId="mounts" columns={mountColumns}>
-                {mounts.map((mount, i) => {
-                  const pct = percentage(mount.used, mount.total);
-                  return <tr key={mount.path + i}>
-                    <td title={mount.path}>{mount.path}</td>
-                    <td>{bytes(mount.available)} / {bytes(mount.total)}</td>
-                    <td><div className="monitor-mount-usage"><span>{pct.toFixed(0)}%</span>
-                      <div className="monitor-bar"><span className={"monitor-bar-fill " + (pct >= 90 ? "danger" : pct >= 80 ? "warn" : "normal")}
-                        style={{ width: pct + "%" }} /></div></div></td>
-                    <td className="monitor-table-filler" aria-hidden="true" />
-                  </tr>;
-                })}
-              </MonitorTable>
-            </div>
+            {!topProcesses.length && <small className="muted">{snapshot?.processes.length && processOrder === "cpu" ? tr("等待下一次有效 CPU 采样") : tr("暂无进程数据")}</small>}
+            {snapshot?.processTruncated && <p className="monitor-detail-note warning">{tr("采集受限：已读取 {0} / {1} 个进程", snapshot.processes.length, snapshot.processCount ?? snapshot.processes.length)}</p>}
           </section>
           <footer className="monitor-footer">
             <span className={"status-dot " + (paused ? "" : "connected")} />
@@ -279,11 +292,19 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
       )}
       {showProcesses && snapshot && remote && (
         <Modal title={tr("进程 · ") + snapshot.hostname} onClose={() => setShowProcesses(false)} wide>
+          <div className="monitor-process-toolbar">
+            <input aria-label={tr("搜索进程")} placeholder={tr("搜索 PID、用户或命令…")} value={processQuery}
+              onChange={(e) => { setProcessQuery(e.target.value); setProcessPage(0); }} />
+            <span>{tr("{0} / {1} 个进程", allProcesses.length, snapshot.processCount ?? snapshot.processes.length)}</span>
+          </div>
+          {snapshot.processTruncated && <p className="monitor-detail-note warning">{tr("采集受限：已读取 {0} / {1} 个进程", snapshot.processes.length, snapshot.processCount ?? snapshot.processes.length)}</p>}
+          <p className="monitor-detail-note">{tr("CPU 为最近采样区间用量，100% 对应一个逻辑核；内存为 RSS，可能包含共享页。")}</p>
           <div className="process-table scroll-area">
-            <MonitorTable tableId={detached ? "processes-readonly" : "processes"} columns={detached ? processColumns.slice(0, 5) : processColumns}>
-              {snapshot.processes.map((p) => <tr key={p.pid}>
-                <td>{p.pid}</td><td>{p.user}</td><td>{p.cpu.toFixed(1)}%</td>
-                <td>{p.memory.toFixed(1)}%</td>
+            <MonitorTable tableId={detached ? "processes-readonly" : "processes"} columns={detached ? processColumns.slice(0, 5) : processColumns}
+              sort={processSort} onSort={changeProcessSort}>
+              {allProcesses.slice(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE).map((p) => <tr key={p.pid}>
+                <td>{p.pid}</td><td>{p.user}</td><td>{pctText(p.cpu)}</td>
+                <td title={pctText(p.memory)}>{p.rssBytes == null ? "—" : bytes(p.rssBytes)}</td>
                 <td className="mono truncate" title={p.command}>{p.command}</td>
                 {!detached && <td><button className="text-button red" onClick={async () => {
                   if (!remote || !(await confirmAction(
@@ -297,6 +318,12 @@ export function MonitorPanel({ session, settings, notify, onClose, width, onDeta
                 <td className="monitor-table-filler" aria-hidden="true" />
               </tr>)}
             </MonitorTable>
+          </div>
+          {!allProcesses.length && <p className="monitor-detail-note">{tr("没有匹配的进程")}</p>}
+          <div className="monitor-process-pagination">
+            <button className="button secondary small" disabled={pageIndex === 0} onClick={() => setProcessPage(pageIndex - 1)}>{tr("上一页")}</button>
+            <span>{pageIndex + 1} / {pageCount}</span>
+            <button className="button secondary small" disabled={pageIndex + 1 >= pageCount} onClick={() => setProcessPage(pageIndex + 1)}>{tr("下一页")}</button>
           </div>
         </Modal>
       )}
