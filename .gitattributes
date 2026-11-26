@@ -1,0 +1,2 @@
+# Remote shell scripts must retain Unix line endings, including Windows builds.
+*.sh text eol=lf

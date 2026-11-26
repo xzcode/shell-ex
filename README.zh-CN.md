@@ -16,7 +16,7 @@
 | Windows（x64） | `.exe`（NSIS） |
 | Linux（x64） | `.deb` |
 
-发行页面提供各平台安装包的 SHA-256 校验值及构建来源。参见 [全部版本](https://github.com/xzcode/shell-ex/releases) 和 [v0.4.14 版本说明](docs/releases/v0.4.14.md)。macOS 采用 ad-hoc 签名，未经过 Apple 公证；Windows 可能提示无法识别发布者。Linux 安装包面向兼容的 Debian 系发行版。
+发行页面提供各平台安装包的 SHA-256 校验值及构建来源。参见 [全部版本](https://github.com/xzcode/shell-ex/releases) 和 [v0.4.15 版本说明](docs/releases/v0.4.15.md)。macOS 采用 ad-hoc 签名，未经过 Apple 公证；Windows 可能提示无法识别发布者。Linux 安装包面向兼容的 Debian 系发行版。
 
 ## 界面预览
 

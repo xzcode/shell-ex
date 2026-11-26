@@ -5,12 +5,22 @@ use crate::{
     ssh::SshManager,
 };
 use serde::Serialize;
-use std::{collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::monitor_storage::{disk_rate, parse_diskstats, parse_mounts, DiskSample};
 pub use crate::monitor_storage::{DiskIo, DiskMount};
 const COLLECT: &str = include_str!("monitor_collect.sh");
+
+// SSH executes this script in the remote Linux shell, irrespective of the
+// desktop OS or the line endings used by the build checkout.
+fn normalize_collector(script: &str) -> Cow<'_, str> {
+    if script.contains("\r\n") {
+        Cow::Owned(script.replace("\r\n", "\n"))
+    } else {
+        Cow::Borrowed(script)
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,7 +93,8 @@ impl MonitorService {
         }
     }
     pub async fn snapshot(&self, session_id: &str) -> Result<MonitorSnapshot> {
-        let output = self.ssh.exec(session_id, COLLECT).await?;
+        let command = normalize_collector(COLLECT);
+        let output = self.ssh.exec(session_id, command.as_ref()).await?;
         if output.status != 0 {
             return Err(AppError::new(
                 "MONITOR_UNAVAILABLE",
@@ -380,6 +391,33 @@ fn apply_deltas(snapshot: &mut MonitorSnapshot, current: &Counters, previous: Op
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn collector_normalizes_windows_checkout_line_endings() {
+        let lf = COLLECT.replace("\r\n", "\n");
+        let windows = lf.replace('\n', "\r\n");
+        assert!(windows.contains("\r\n"));
+        assert_eq!(normalize_collector(&windows).as_ref(), lf.as_str());
+        assert!(!normalize_collector(&windows).contains('\r'));
+        assert!(matches!(normalize_collector(&lf), Cow::Borrowed(_)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn normalized_windows_collector_has_valid_shell_syntax() {
+        let windows = COLLECT.replace("\r\n", "\n").replace('\n', "\r\n");
+        let command = normalize_collector(&windows);
+        let output = std::process::Command::new("sh")
+            .args(["-n", "-c", command.as_ref()])
+            .output()
+            .expect("run shell syntax check");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
     #[test]
     fn linux_snapshot_has_correct_units_and_no_guest_double_count() {
         let raw="__SX_HOST__\ndev\n__SX_OS__\n\"Test Linux\"\n__SX_UPTIME__\n100.5 200\n__SX_LOAD__\n1.0 2.0 3.0 1/10 100\n__SX_CPU__\ncpu 10 2 3 40 5 1 1 0 3 1\n__SX_MEMORY__\nMemTotal: 1000 kB\nMemAvailable: 400 kB\n__SX_NETWORK__\nlo: 99 0 0 0 0 0 0 0 99 0 0 0 0 0 0 0\neth0: 123 0 0 0 0 0 0 0 456 0 0 0 0 0 0 0\n__SX_MOUNTS__\n/dev/test ext4 100 60 40 60% /\n__SX_PROCESSES__\n42 root 12 10 2 500 server\n__SX_END__\n";
