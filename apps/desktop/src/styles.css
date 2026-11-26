@@ -3248,3 +3248,17 @@ thead { background: var(--surface-table-head); }
 .group-heading-row > .group-heading > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .group-heading-row > .icon-button { width: 23px; height: 23px; flex-shrink: 0; }
 .group-heading-row .group-context-menu { right: 8px; top: 100%; z-index: 15; min-width: 155px; }
+
+/* Local terminal wallpaper remains behind readable terminal text. */
+.terminal-view.has-background { background: var(--terminal); }
+.terminal-backdrop {
+  position: absolute; inset: 0; pointer-events: none;
+  background-position: center; background-repeat: no-repeat; background-size: cover;
+  opacity: .22;
+}
+.terminal-view.has-background .terminal-canvas { position: relative; }
+.terminal-view.has-background .xterm-viewport { background-color: transparent !important; }
+.terminal-context-menu { width: 228px; max-height: calc(100vh - 12px); }
+.terminal-context-menu button > span { display: flex; align-items: center; gap: 8px; }
+.terminal-context-menu button > span > svg { flex-shrink: 0; }
+.terminal-context-menu kbd { font: inherit; font-size: 10px; color: var(--muted); white-space: nowrap; }
