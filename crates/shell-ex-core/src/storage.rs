@@ -373,7 +373,7 @@ pub fn validate_host(h: &Host) -> Result<()> {
     Ok(())
 }
 pub fn validate_settings(s: &AppSettings) -> Result<()> {
-    if !["dark", "light", "graphite", "mist", "aurora", "black"].contains(&s.theme.as_str())
+    if !is_supported_theme(&s.theme)
         || !(9..=30).contains(&s.font_size)
         || s.font_family.len() > 300
         || !(100..=100000).contains(&s.scrollback)
@@ -431,6 +431,30 @@ fn validate_snippet(s: &Snippet) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn all_current_and_legacy_themes_are_valid_and_roundtrip() {
+        for theme in [
+            "black",
+            "gray",
+            "graphite",
+            "aurora",
+            "soft-white",
+            "mist",
+            "light",
+            "dark",
+        ] {
+            let mut settings = crate::models::AppSettings::default();
+            settings.theme = theme.into();
+            assert!(super::validate_settings(&settings).is_ok(), "{theme}");
+            let value: crate::models::AppSettings =
+                serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+            assert_eq!(value.theme, theme);
+        }
+        let mut invalid = crate::models::AppSettings::default();
+        invalid.theme = "unknown".into();
+        assert!(super::validate_settings(&invalid).is_err());
+    }
+
     #[test]
     fn workspace_resize_preferences_are_backward_compatible_and_bounded() {
         let previous: crate::models::Workspace = serde_json::from_value(serde_json::json!({

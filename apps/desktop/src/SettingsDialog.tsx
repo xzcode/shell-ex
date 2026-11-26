@@ -78,7 +78,7 @@ export function SettingsDialog({
         .catch((e) =>
           setUpdate({
             configured: false,
-            version: "0.4.10",
+            version: "0.4.11",
             reason: errorText(e),
           }),
         );
@@ -169,7 +169,7 @@ export function SettingsDialog({
       footer={
         <>
           <span className="footer-note">
-            Shell EX · {update?.version || "0.4.10"}
+            Shell EX · {update?.version || "0.4.11"}
           </span>
           <button className="button secondary" onClick={onClose}>{tr("取消")}</button>
           <button
@@ -221,7 +221,9 @@ export function SettingsDialog({
               <div className="theme-options">
                 {([
                   { id: "black", label: tr("纯黑"), hint: tr("纯黑背景与中性灰控件") },
+                  { id: "gray", label: tr("中性灰"), hint: tr("无蓝色偏色，层次分明的中深灰") },
                   { id: "graphite", label: tr("石墨灰"), hint: tr("柔和的专业深色") },
+                  { id: "soft-white", label: tr("柔和白"), hint: tr("低亮度暖白，浅灰导航与工具栏") },
                   { id: "mist", label: tr("雾光浅色"), hint: tr("舒适的浅色界面") },
                   { id: "aurora", label: tr("极光深色"), hint: tr("青绿点缀的暗色") },
                   { id: "light", label: tr("经典浅色"), hint: tr("原版浅色配色") },
@@ -232,9 +234,12 @@ export function SettingsDialog({
                     onClick={() => set("theme", theme.id)}
                     aria-pressed={form.theme === theme.id || (form.theme === "dark" && theme.id === "graphite")}
                   >
-                    <div className="theme-mini">
-                      <span />
-                      <div><i /><i /><i /></div>
+                    <div className="theme-mini" data-preview-theme={theme.id} aria-hidden="true">
+                      <div className="theme-mini-title"><b /><b /><b /></div>
+                      <div className="theme-mini-sidebar"><i /><i /><i /><i /><i /></div>
+                      <div className="theme-mini-terminal"><i /><i /><i /></div>
+                      <div className="theme-mini-monitor"><i /><i /><i /></div>
+                      <div className="theme-mini-files"><b /><i /><i /></div>
                     </div>
                     <strong>{theme.label}</strong>
                     <small>{theme.hint}</small>
@@ -478,7 +483,7 @@ export function SettingsDialog({
               <div className="brand-mark large">›_</div>
               <h2>Shell EX</h2>
               <p>{tr("你的服务器，你的工作台。")}</p>
-              <span className="version">v{update?.version || "0.4.10"}</span>
+              <span className="version">v{update?.version || "0.4.11"}</span>
               <div className="settings-list">
                 <div>
                   <span>{tr("运行环境")}</span>

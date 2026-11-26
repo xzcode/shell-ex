@@ -26,7 +26,7 @@ pub struct MonitorContext {
 
 impl MonitorContext {
     fn validate(&self) -> Result<()> {
-        if !["dark", "light", "graphite", "mist", "aurora", "black"].contains(&self.theme.as_str())
+        if !shell_ex_core::models::is_supported_theme(&self.theme)
             || !["zh-CN", "en"].contains(&self.language.as_str())
             || !(2..=60).contains(&self.monitor_interval)
             || self

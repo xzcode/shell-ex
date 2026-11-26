@@ -719,5 +719,9 @@ export const en: Readonly<Record<string, string>> = {
   "纵轴刻度": "Y-axis scale",
   "时间轴": "Time axis",
   "命令已复制。": "Command copied.",
-  "复制命令": "Copy command"
+  "复制命令": "Copy command",
+  "中性灰": "Neutral gray",
+  "无蓝色偏色，层次分明的中深灰": "Neutral medium-dark gray with distinct workspace regions",
+  "柔和白": "Soft white",
+  "低亮度暖白，浅灰导航与工具栏": "Muted warm white with light-gray navigation and toolbars"
 };

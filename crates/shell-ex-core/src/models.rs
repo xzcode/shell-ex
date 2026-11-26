@@ -114,6 +114,20 @@ pub struct AppSettings {
     pub confirm_multiline_paste: bool,
     pub auto_reconnect: bool,
 }
+pub fn is_supported_theme(theme: &str) -> bool {
+    [
+        "dark",
+        "light",
+        "graphite",
+        "mist",
+        "aurora",
+        "black",
+        "gray",
+        "soft-white",
+    ]
+    .contains(&theme)
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {

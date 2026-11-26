@@ -10,6 +10,7 @@ import { api, confirmAction, errorText } from "./api";
 import { IconButton } from "./ui";
 import { sendTerminalInput } from "./terminalInput";
 import { TerminalAckController } from "./terminalAck";
+import { terminalTheme } from "./themePalettes";
 const pending = new Map<string, TerminalEvent[]>();
 const sinks = new Map<string, (event: TerminalEvent) => void>();
 export function receiveTerminalEvent(event: TerminalEvent) {
@@ -25,79 +26,6 @@ export function forgetTerminal(id: string) {
   sinks.delete(id);
   pending.delete(id);
 }
-const graphiteTheme = {
-  background: "#191e26",
-  foreground: "#e4e9ee",
-  cursor: "#91bdff",
-  selectionBackground: "#36557c80",
-  black: "#1d2734",
-  red: "#ee8792",
-  green: "#6dd5b0",
-  yellow: "#e6bd78",
-  blue: "#80b4f6",
-  magenta: "#c19af0",
-  cyan: "#71c8d1",
-  white: "#d7dfe9",
-  brightBlack: "#77869b",
-};
-const auroraTheme = {
-  ...graphiteTheme,
-  background: "#151e1c",
-  foreground: "#e3eee8",
-  cursor: "#84d6bd",
-  selectionBackground: "#3b746180",
-  green: "#79cfb7",
-  blue: "#83b8da",
-  cyan: "#7acdc2",
-};
-const mistTheme = {
-  background: "#fbfbfa",
-  foreground: "#26333d",
-  cursor: "#417ac4",
-  selectionBackground: "#c9d9ec80",
-  black: "#28343c",
-  red: "#a94454",
-  green: "#287b61",
-  yellow: "#977025",
-  blue: "#417ac4",
-  magenta: "#8451ac",
-  cyan: "#337f82",
-  white: "#e3e9ef",
-  brightBlack: "#7e8b94",
-};
-const lightTheme = {
-  background: "#fbfcfe",
-  foreground: "#263547",
-  cursor: "#2868b6",
-  selectionBackground: "#acc9ed80",
-  black: "#263547",
-  red: "#b4374d",
-  green: "#237257",
-  yellow: "#926b17",
-  blue: "#2868b6",
-  magenta: "#8351ac",
-  cyan: "#287984",
-  white: "#dae2ed",
-  brightBlack: "#7d8ca1",
-};
-const blackTheme = {
-  ...graphiteTheme,
-  background: "#000000",
-  foreground: "#e6e6e6",
-  cursor: "#e6e6e6",
-  selectionBackground: "#ffffff36",
-  black: "#171717",
-  brightBlack: "#808080",
-  white: "#e2e2e2",
-};
-const terminalThemes = {
-  black: blackTheme,
-  graphite: graphiteTheme,
-  dark: graphiteTheme,
-  aurora: auroraTheme,
-  mist: mistTheme,
-  light: lightTheme,
-};
 export function TerminalView({
   session,
   settings,
@@ -139,9 +67,10 @@ export function TerminalView({
       fontSize: settings.fontSize,
       fontFamily: settings.fontFamily,
       scrollback: settings.scrollback,
-      theme: terminalThemes[settings.theme] ?? graphiteTheme,
+      theme: terminalTheme(settings.theme),
       allowProposedApi: false,
       allowTransparency: false,
+      minimumContrastRatio: 4.5,
       convertEol: false,
       rightClickSelectsWord: true,
     });
@@ -301,7 +230,7 @@ export function TerminalView({
       term.current.options.fontFamily = settings.fontFamily;
       term.current.options.scrollback = settings.scrollback;
       term.current.options.theme =
-        terminalThemes[settings.theme] ?? graphiteTheme;
+        terminalTheme(settings.theme);
       fit.current?.fit();
     }
   }, [settings]);

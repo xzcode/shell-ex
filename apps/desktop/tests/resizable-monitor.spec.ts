@@ -154,6 +154,8 @@ test("detached webview mounts only read-only monitoring and can return to dock",
     Object.defineProperty(window, "__fixture", { value: {
       docked: () => docked,
       english: () => { context = { ...initial, theme: "mist", language: "en" }; },
+      gray: () => { context = { ...initial, theme: "gray", language: "en" }; },
+      softWhite: () => { context = { ...initial, theme: "soft-white", language: "en" }; },
       reopen: () => { context = initial; docked = false; },
       samples: () => samples,
     }});
@@ -196,6 +198,12 @@ test("detached webview mounts only read-only monitoring and can return to dock",
   await page.keyboard.press("Escape");
   await page.evaluate(() => (window as any).__fixture.english());
   await expect(page.locator("html")).toHaveAttribute("data-theme", "mist");
+  await page.evaluate(() => (window as any).__fixture.gray());
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "gray");
+  await expect(panel).toHaveCSS("background-color", "rgb(73, 73, 73)");
+  await page.evaluate(() => (window as any).__fixture.softWhite());
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "soft-white");
+  await expect(panel).toHaveCSS("background-color", "rgb(224, 226, 219)");
   await panel.getByRole("button", { name: "Dock to workspace", exact: true }).click();
   await expect.poll(async () => page.evaluate(() => (window as any).__fixture.docked())).toBe(true);
   await expect(panel.locator('[data-chart="cpu"]')).toHaveCount(0);

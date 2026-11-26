@@ -134,7 +134,7 @@ export type Tunnel = {
   targetPort?: number;
 };
 export type AppSettings = {
-  theme: "graphite" | "mist" | "aurora" | "black" | "light" | "dark";
+  theme: "graphite" | "mist" | "aurora" | "black" | "gray" | "soft-white" | "light" | "dark";
   fontSize: number;
   fontFamily: string;
   scrollback: number;

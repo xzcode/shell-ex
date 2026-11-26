@@ -12,6 +12,7 @@ import type { Notify, RemoteFile } from "./types";
 import { api, bytes, confirmAction, errorText } from "./api";
 import { Busy, Empty, ErrorBox, Field, Modal } from "./ui";
 import { setDraftDirty } from "./drafts";
+import { themePalettes, normalizeThemeId } from "./themePalettes";
 self.MonacoEnvironment = {
   getWorker(_id, label) {
     if (label === "json") return new JsonWorker();
@@ -23,19 +24,36 @@ self.MonacoEnvironment = {
   },
 };
 loader.config({ monaco });
-monaco.editor.defineTheme("shell-ex-black", {
-  base: "vs-dark",
-  inherit: true,
-  rules: [],
-  colors: {
-    "editor.background": "#000000",
-    "editor.foreground": "#e6e6e6",
-    "editorGutter.background": "#000000",
-    "editorLineNumber.foreground": "#858585",
-    "editor.lineHighlightBackground": "#191919",
-    "editor.selectionBackground": "#ffffff30",
-  },
-});
+for (const [id, { editor }] of Object.entries(themePalettes)) {
+  monaco.editor.defineTheme("shell-ex-" + id, {
+    base: editor.base,
+    inherit: true,
+    rules: [],
+    colors: {
+      "editor.background": editor.background,
+      "editor.foreground": editor.foreground,
+      "editorGutter.background": editor.background,
+      "editorLineNumber.foreground": editor.lineNumber,
+      "editorLineNumber.activeForeground": editor.foreground,
+      "editor.lineHighlightBackground": editor.lineHighlight,
+      "editor.selectionBackground": editor.selection,
+      "editorIndentGuide.background1": editor.border,
+      "editorCursor.foreground": editor.foreground,
+    },
+  });
+}
+function useEditorTheme() {
+  const [theme, setTheme] = useState(() => normalizeThemeId(document.documentElement.dataset.theme));
+  useEffect(() => {
+    const sync = () => setTheme(normalizeThemeId(document.documentElement.dataset.theme));
+    const observer = new MutationObserver(sync);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    sync();
+    return () => observer.disconnect();
+  }, []);
+  return "shell-ex-" + theme;
+}
+
 function language(path: string) {
   const extension = path.split(".").pop()?.toLowerCase() || "";
   return (
@@ -77,6 +95,7 @@ export default function RemoteEditor({
   notify: Notify;
   onClose: () => void;
 }) {
+  const editorTheme = useEditorTheme();
   const [targetPath, setTargetPath] = useState(path);
   const [saveAs, setSaveAll] = useState(false);
   const [saveAsPath, setSaveAllPath] = useState(path + ".copy");
@@ -205,11 +224,7 @@ export default function RemoteEditor({
             height="100%"
             language={plainText ? "plaintext" : language(targetPath)}
             value={text}
-            theme={
-              ["light", "mist"].includes(document.documentElement.dataset.theme || "")
-                ? "vs"
-                : document.documentElement.dataset.theme === "black" ? "shell-ex-black" : "vs-dark"
-            }
+            theme={editorTheme}
             onChange={(value) => setText(value || "")}
             options={{
               fontSize: 13,
