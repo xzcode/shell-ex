@@ -49,7 +49,7 @@ def password_sudo_fixture(root, env, elevated_sshd):
         subprocess.run(["sudo", "-n", "chpasswd"], input=f"{user}:{password}\n",
                        text=True, check=True)
         staging.write_text(f"Defaults:{user} timestamp_timeout=0\n"
-                           f"{user} ALL=(root) PASSWD: {server_path}\n")
+                           f"{user} ALL=(root) PASSWD: {server_path}, /usr/bin/tar\n")
         subprocess.run(["sudo", "-n", "visudo", "-cf", str(staging)], check=True)
         subprocess.run(["sudo", "-n", "install", "-o", "root", "-g", "root",
                         "-m", "0440", str(staging), rule], check=True)

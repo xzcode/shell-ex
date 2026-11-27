@@ -1104,16 +1104,113 @@ impl SshManager {
         Ok(None)
     }
 
-    // Server-side archive generation executes shell commands, ordinary only.
-    pub(crate) async fn require_transfer_session(&self, id: &str) -> Result<()> {
-        if self.sudo_files.read().await.contains_key(id) {
+    // This is a narrow archive operation, not an elevated exec API. The
+    // transfer service validates selection and owns the private staging path.
+    pub(crate) async fn pack_sudo_archive(
+        &self,
+        id: &str,
+        archive: &str,
+        parent: &str,
+        names: &[String],
+        cancel: &CancellationToken,
+    ) -> Result<()> {
+        let context = self.sudo_files.read().await.get(id).cloned();
+        let context = context
+            .filter(|context| !context.closing && !context.cancel.is_cancelled())
+            .ok_or_else(|| AppError::new("SESSION_CLOSED", "Elevated SFTP has ended"))?;
+        let stage_id = archive
+            .strip_prefix("/tmp/.shell-ex-pack-")
+            .and_then(|path| path.strip_suffix("/archive.tar.gz"));
+        if !stage_id.is_some_and(|id| Uuid::parse_str(id).is_ok())
+            || !parent.starts_with('/')
+            || names.is_empty()
+            || names.iter().any(|name| {
+                name.is_empty()
+                    || name == "."
+                    || name == ".."
+                    || name.contains(['/', '\0', '\r', '\n'])
+            })
+        {
             return Err(AppError::new(
-                "SUDO_TRANSFER_UNAVAILABLE",
-                "Server-side archive generation is not available in sudo mode",
+                "INVALID_ARCHIVE_SELECTION",
+                "Invalid elevated archive selection",
             ));
         }
-        self.session(id).await?;
-        Ok(())
+        let marker = context
+            .password
+            .as_ref()
+            .map(|_| format!("__SHELL_EX_SUDO_{}__", Uuid::new_v4().simple()));
+        let prefix = marker.as_ref().map_or_else(
+            || "sudo -n".to_owned(),
+            |marker| format!("sudo -S -k -p {marker}"),
+        );
+        let command = format!(
+            "TAR_OPTIONS= {prefix} -u root -- /usr/bin/tar --one-file-system -czf {} -C {} -- {}",
+            shell_quote(archive),
+            shell_quote(parent),
+            names
+                .iter()
+                .map(|name| shell_quote(name))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+        if command.len() > 60_000 {
+            return Err(AppError::new(
+                "INVALID_ARCHIVE_SELECTION",
+                "Selection exceeds the archive command size limit",
+            ));
+        }
+        let mut channel = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(archive_cancelled()),
+            channel = timeout(Duration::from_secs(5), context.session.transport.channel_open_session()) => {
+                channel.map_err(|_| AppError::new("EXEC_TIMEOUT", "Archive channel timed out"))??
+            }
+        };
+        let operation = async {
+            channel.exec(true, command.into_bytes()).await?;
+            let mut status = None;
+            let mut sent = false;
+            let mut stderr_tail = Vec::new();
+            loop {
+                match channel.wait().await {
+                    Some(ChannelMsg::ExtendedData { data, ext: 1 }) => {
+                        if let (Some(marker), Some(password)) =
+                            (marker.as_ref(), context.password.as_ref())
+                        {
+                            if received_prompt(&mut stderr_tail, &data, marker.as_bytes()) {
+                                if sent {
+                                    return Err(sudo_archive_denied());
+                                }
+                                sent = true;
+                                let mut line = Zeroizing::new(password.as_bytes().to_vec());
+                                line.push(b'\n');
+                                channel.data(line.as_slice()).await?;
+                            }
+                        }
+                    }
+                    Some(ChannelMsg::ExitStatus { exit_status }) => status = Some(exit_status),
+                    Some(ChannelMsg::Failure) => return Err(sudo_archive_denied()),
+                    Some(ChannelMsg::Close) | None => break,
+                    _ => {}
+                }
+            }
+            if status == Some(0) {
+                Ok(())
+            } else {
+                // Do not expose arbitrary stderr from a password-bearing command.
+                Err(sudo_archive_denied())
+            }
+        };
+        let result = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => Err(archive_cancelled()),
+            outcome = timeout(Duration::from_secs(300), operation) => {
+                outcome.unwrap_or_else(|_| Err(AppError::new("EXEC_TIMEOUT", "Elevated archive creation timed out")))
+            }
+        };
+        let _ = timeout(Duration::from_secs(2), channel.close()).await;
+        result
     }
 
     pub async fn sftp(&self, id: &str) -> Result<Arc<SftpSession>> {
@@ -1287,6 +1384,17 @@ fn expand_home(path: &str) -> std::path::PathBuf {
     }
     path.into()
 }
+fn archive_cancelled() -> AppError {
+    AppError::new("TRANSFER_CANCELLED", "Elevated archive creation cancelled")
+}
+
+fn sudo_archive_denied() -> AppError {
+    AppError::new(
+        "SUDO_ARCHIVE_DENIED",
+        "Elevated archive creation failed; check sudo authorization for /usr/bin/tar and the selected files",
+    )
+}
+
 fn sudo_auth_error(password_supplied: bool) -> AppError {
     if password_supplied {
         AppError::new(

@@ -526,7 +526,7 @@ export function FilePanel({
     }
   }
   async function archiveDownload(targets: FileEntry[]) {
-    if (!remote || !targets.length || elevated || sudoBusy) return;
+    if (!remote || !targets.length || sudoBusy || working) return;
     setWorking(true);
     try {
       const name = targets.length === 1 ? targets[0].name + ".tar.gz" : "shell-ex-archive.tar.gz";
@@ -646,7 +646,7 @@ export function FilePanel({
   const single = menuTargets.length === 1 ? menuTargets[0] : undefined;
   const canOpen = !!single;
   const canEdit = !!single && !single.isDir;
-  const canPack = !elevated && menuTargets.length > 0 && menuTargets.every((entry) => !entry.isSymlink);
+  const canPack = !sudoBusy && !working && menuTargets.length > 0 && menuTargets.every((entry) => !entry.isSymlink);
   function runMenu(action: () => void) {
     setMenu(null);
     action();

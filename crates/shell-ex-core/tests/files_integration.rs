@@ -641,15 +641,32 @@ async fn elevated_file_context_is_revocable_and_isolated() {
         .unwrap()
         .iter()
         .any(|entry| entry.name == partial_name));
-    let archive_error = manager
+    let archive = local.path().join("archive.tar.gz");
+    let packed = manager
         .start_archive_download(
             elevated.clone(),
-            vec![path.clone()],
-            local.path().join("archive.tar.gz").to_str().unwrap().into(),
+            vec![path.clone(), remote_folder.clone()],
+            archive.to_str().unwrap().into(),
         )
         .await
-        .unwrap_err();
-    assert_eq!(archive_error.code, "SUDO_TRANSFER_UNAVAILABLE");
+        .unwrap();
+    assert!(packed.elevated);
+    let outcome = wait_for(&manager, &packed.id, &["completed", "failed"]).await;
+    assert_eq!(outcome.status, "completed", "{:?}", outcome.error);
+    assert!(outcome.error.is_none(), "{:?}", outcome.error);
+    let listing = std::process::Command::new("tar")
+        .arg("-tzf")
+        .arg(&archive)
+        .output()
+        .unwrap();
+    assert!(listing.status.success());
+    let listing = String::from_utf8_lossy(&listing.stdout);
+    assert!(listing.contains("config.txt"), "{listing}");
+    assert!(listing.contains("folder/child.txt"), "{listing}");
+    assert!(files
+        .list(&elevated, packed.remote_path.rsplit_once('/').unwrap().0)
+        .await
+        .is_err());
     assert!(manager
         .revoke_sudo_context(&second, &elevated)
         .await
@@ -742,8 +759,28 @@ async fn password_authorized_sftp_authenticates_and_reopens_atomic_channels() {
     assert_eq!(updated.text, "second");
     assert!(files.list(&session, &root).await.is_err());
     assert!(ssh.exec(&elevated, "id").await.is_err());
-    files.remove(&elevated, &path, false).await.unwrap();
     let transfers = TransferManager::new(ssh.clone(), 1);
+    let local = tempfile::tempdir_in(std::env::var("SHELL_EX_TEST_ROOT").unwrap()).unwrap();
+    let archive = local.path().join("password-archive.tar.gz");
+    let packed = transfers
+        .start_archive_download(
+            elevated.clone(),
+            vec![path.clone()],
+            archive.to_str().unwrap().into(),
+        )
+        .await
+        .unwrap();
+    let outcome = wait_for(&transfers, &packed.id, &["completed", "failed"]).await;
+    assert_eq!(outcome.status, "completed", "{:?}", outcome.error);
+    assert!(outcome.error.is_none(), "{:?}", outcome.error);
+    let listing = std::process::Command::new("tar")
+        .arg("-tzf")
+        .arg(&archive)
+        .output()
+        .unwrap();
+    assert!(listing.status.success());
+    assert!(String::from_utf8_lossy(&listing.stdout).contains("password-authenticated.txt"));
+    files.remove(&elevated, &path, false).await.unwrap();
     transfers
         .revoke_sudo_context(&session, &elevated)
         .await

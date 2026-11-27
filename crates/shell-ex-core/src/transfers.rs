@@ -29,6 +29,7 @@ use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom},
     sync::{watch, Mutex, Notify},
 };
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 const CHUNK: usize = 64 * 1024;
@@ -77,11 +78,25 @@ struct Task {
     overwrite: bool,
     archive_dir: Option<String>,
 }
+struct PendingArchive {
+    context_id: String,
+    cancel: CancellationToken,
+    done: CancellationToken,
+}
+
+struct ArchiveCompletion(CancellationToken);
+impl Drop for ArchiveCompletion {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
 struct Inner {
     ssh: Arc<SshManager>,
     tasks: Mutex<BTreeMap<String, Arc<Task>>>,
     plans: Mutex<BTreeMap<String, directory_transfers::PlanDetails>>,
     registration: Mutex<()>,
+    pending_archives: Mutex<BTreeMap<String, PendingArchive>>,
     revocation: Mutex<()>,
     concurrency: AtomicUsize,
     active: AtomicUsize,
@@ -108,6 +123,7 @@ impl TransferManager {
                 tasks: Mutex::new(BTreeMap::new()),
                 plans: Mutex::new(BTreeMap::new()),
                 registration: Mutex::new(()),
+                pending_archives: Mutex::new(BTreeMap::new()),
                 revocation: Mutex::new(()),
                 concurrency: AtomicUsize::new(concurrency.clamp(1, 8)),
                 active: AtomicUsize::new(0),
@@ -298,7 +314,7 @@ impl TransferManager {
         paths: Vec<String>,
         local_path: String,
     ) -> Result<Transfer> {
-        self.inner.ssh.require_transfer_session(&session_id).await?;
+        let elevated = self.inner.ssh.file_transfer_context(&session_id).await?;
         if Self::download_destination_exists(&local_path).await? {
             return Err(destination_exists());
         }
@@ -318,6 +334,11 @@ impl TransferManager {
                     "Select regular files or directories, not links or special files",
                 ));
             }
+        }
+        if elevated.is_some() {
+            return self
+                .start_privileged_archive(session_id, parent, names, local_path)
+                .await;
         }
         let directory = format!("/tmp/.shell-ex-pack-{}", Uuid::new_v4());
         let archive = join_remote(&directory, "archive.tar.gz");
@@ -370,6 +391,124 @@ impl TransferManager {
         .await;
         if let Err(error) = result {
             if let Err(cleanup) = self.remove_archive(&session_id, &directory).await {
+                return Err(AppError::new(
+                    "ARCHIVE_CLEANUP_FAILED",
+                    format!(
+                        "{}; temporary archive cleanup failed at {}: {}",
+                        error.message, directory, cleanup.message
+                    ),
+                ));
+            }
+            return Err(error);
+        }
+        result
+    }
+
+    async fn start_privileged_archive(
+        &self,
+        context_id: String,
+        parent: String,
+        names: Vec<String>,
+        local_path: String,
+    ) -> Result<Transfer> {
+        let operation_id = Uuid::new_v4().to_string();
+        let done = CancellationToken::new();
+        let cancel = {
+            let _registration = self.inner.registration.lock().await;
+            let owner = self
+                .inner
+                .ssh
+                .file_transfer_context(&context_id)
+                .await?
+                .ok_or_else(|| AppError::new("SESSION_CLOSED", "Elevated SFTP has ended"))?;
+            let cancel = owner.child_token();
+            let mut pending = self.inner.pending_archives.lock().await;
+            pending.retain(|_, item| !item.done.is_cancelled());
+            pending.insert(
+                operation_id.clone(),
+                PendingArchive {
+                    context_id: context_id.clone(),
+                    cancel: cancel.clone(),
+                    done: done.clone(),
+                },
+            );
+            cancel
+        };
+        let manager = self.clone();
+        // The cleanup task outlives the UI invocation. Revoke can signal it
+        // and await cleanup before closing the privileged SFTP channel.
+        tokio::spawn(async move {
+            let _completion = ArchiveCompletion(done);
+            let result = manager
+                .pack_privileged(&context_id, &parent, &names, local_path, &cancel)
+                .await;
+            manager
+                .inner
+                .pending_archives
+                .lock()
+                .await
+                .remove(&operation_id);
+            result
+        })
+        .await
+        .map_err(AppError::internal)?
+    }
+
+    async fn pack_privileged(
+        &self,
+        context_id: &str,
+        parent: &str,
+        names: &[String],
+        local_path: String,
+        cancel: &CancellationToken,
+    ) -> Result<Transfer> {
+        if cancel.is_cancelled() {
+            return Err(AppError::new("TRANSFER_CANCELLED", "Archive creation cancelled"));
+        }
+        let sftp = self.inner.ssh.sftp(context_id).await?;
+        let directory = format!("/tmp/.shell-ex-pack-{}", Uuid::new_v4());
+        let archive = join_remote(&directory, "archive.tar.gz");
+        sftp.create_dir(&directory).await.map_err(sftp_error)?;
+        let result = async {
+            sftp.set_metadata(
+                directory.clone(),
+                FileAttributes {
+                    permissions: Some(0o700),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(sftp_error)?;
+            let meta = sftp.symlink_metadata(&directory).await.map_err(sftp_error)?;
+            if !meta.file_type().is_dir()
+                || meta.uid != Some(0)
+                || meta.permissions.map(|mode| mode & 0o777) != Some(0o700)
+            {
+                return Err(AppError::new(
+                    "ARCHIVE_CREATE_FAILED",
+                    "Elevated archive staging directory is not private and root-owned",
+                ));
+            }
+            self.inner
+                .ssh
+                .pack_sudo_archive(context_id, &archive, parent, names, cancel)
+                .await?;
+            if cancel.is_cancelled() {
+                return Err(AppError::new("TRANSFER_CANCELLED", "Archive creation cancelled"));
+            }
+            self.start_owned(
+                context_id.to_owned(),
+                "download".into(),
+                local_path,
+                archive,
+                false,
+                Some(directory.clone()),
+            )
+            .await
+        }
+        .await;
+        if let Err(error) = result {
+            if let Err(cleanup) = self.remove_archive(context_id, &directory).await {
                 return Err(AppError::new(
                     "ARCHIVE_CLEANUP_FAILED",
                     format!(
@@ -475,7 +614,7 @@ impl TransferManager {
     pub async fn revoke_sudo_context(&self, owner_id: &str, context_id: &str) -> Result<()> {
         // Concurrent hide/switch/disconnect calls must not race channel cleanup.
         let _revocation = self.inner.revocation.lock().await;
-        {
+        let pending = {
             let _registration = self.inner.registration.lock().await;
             if !self
                 .inner
@@ -490,7 +629,24 @@ impl TransferManager {
                 .lock()
                 .await
                 .retain(|_, plan| plan.summary.session_id != context_id);
-        }
+            self.inner
+                .pending_archives
+                .lock()
+                .await
+                .values()
+                .filter(|item| item.context_id == context_id)
+                .map(|item| {
+                    item.cancel.cancel();
+                    item.done.clone()
+                })
+                .collect::<Vec<_>>()
+        };
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(35), async {
+            for done in pending {
+                done.cancelled().await;
+            }
+        })
+        .await;
         self.cancel_session(context_id).await;
         self.inner
             .ssh
@@ -530,6 +686,9 @@ impl TransferManager {
         .await;
     }
     pub async fn cancel_all(&self) {
+        for item in self.inner.pending_archives.lock().await.values() {
+            item.cancel.cancel();
+        }
         for record in self.list().await {
             let _ = self.control(&record.id, "cancel").await;
         }

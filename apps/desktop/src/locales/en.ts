@@ -830,5 +830,6 @@ export const en: Readonly<Record<string, string>> = {
   "仅用于本次文件授权，退出后释放，不保存到连接配置或密码库。": "Used only for this file authorization; released on exit and never stored in connection settings or the credential vault.",
   "授权": "Authorize",
   "sudo authentication failed or the server does not permit elevated SFTP": "sudo authentication failed or the server does not permit elevated SFTP",
-  "Enter a nonempty sudo password without line breaks": "Enter a nonempty sudo password without line breaks"
+  "Enter a nonempty sudo password without line breaks": "Enter a nonempty sudo password without line breaks",
+  "Elevated archive creation failed; check sudo authorization for /usr/bin/tar and the selected files": "Elevated archive creation failed; check sudo authorization for /usr/bin/tar and the selected files"
 };
