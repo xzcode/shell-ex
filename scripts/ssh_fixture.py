@@ -4,15 +4,69 @@
 No existing SSH keys, authorized_keys, system services or host trust are modified.
 Usage: python3 scripts/ssh_fixture.py cargo test -p shell-ex-core -- --ignored
 """
+from contextlib import contextmanager
 import getpass
 import os
 from pathlib import Path
 import shutil
+import secrets
 import socket
 import subprocess
 import sys
 import tempfile
 import time
+
+
+@contextmanager
+def password_sudo_fixture(root, env, elevated_sshd):
+    """Opt-in only on disposable hosted GitHub runners, never on user hosts."""
+    if env.get("SHELL_EX_TEST_PASSWORD_SUDO") != "1":
+        yield
+        return
+    if not (elevated_sshd and env.get("GITHUB_ACTIONS") == "true"
+            and env.get("RUNNER_ENVIRONMENT") == "github-hosted"):
+        raise RuntimeError("Password sudo fixture requires a disposable GitHub-hosted runner")
+    suffix = secrets.token_hex(6)
+    user = "sxf" + suffix
+    password = secrets.token_hex(24)
+    home = root / "password-home"
+    rule = "/etc/sudoers.d/shell-ex-fixture-" + suffix
+    staging = root / "password-sudoers"
+    created = False
+    installed = False
+    server_path = "/usr/lib/openssh/sftp-server"
+    if not Path(server_path).is_file():
+        raise RuntimeError("OpenSSH sftp-server missing from hosted fixture")
+    try:
+        # Only the generated fixture account and its one sudo command are
+        # configured. Keep the runner account, system SSH and global sudo policy unchanged.
+        os.chmod(root, 0o711)
+        subprocess.run(["sudo", "-n", "useradd", "--no-create-home", "--user-group",
+                        "--home-dir", str(home), "--shell", "/bin/sh", user], check=True)
+        created = True
+        subprocess.run(["sudo", "-n", "install", "-d", "-m", "0700", "-o", user,
+                        "-g", user, str(home)], check=True)
+        subprocess.run(["sudo", "-n", "chpasswd"], input=f"{user}:{password}\n",
+                       text=True, check=True)
+        staging.write_text(f"Defaults:{user} timestamp_timeout=0\n"
+                           f"{user} ALL=(root) PASSWD: {server_path}\n")
+        subprocess.run(["sudo", "-n", "visudo", "-cf", str(staging)], check=True)
+        subprocess.run(["sudo", "-n", "install", "-o", "root", "-g", "root",
+                        "-m", "0440", str(staging), rule], check=True)
+        installed = True
+        env["SHELL_EX_TEST_PASSWORD_USER"] = user
+        env["SHELL_EX_TEST_SUDO_PASSWORD"] = password
+        yield
+    finally:
+        env.pop("SHELL_EX_TEST_PASSWORD_USER", None)
+        env.pop("SHELL_EX_TEST_SUDO_PASSWORD", None)
+        if installed:
+            subprocess.run(["sudo", "-n", "rm", "-f", "--", rule], check=True)
+        if created:
+            subprocess.run(["sudo", "-n", "userdel", user], check=True)
+            subprocess.run(["sudo", "-n", "rm", "-rf", "--", str(home)], check=True)
+        staging.unlink(missing_ok=True)
+        os.chmod(root, 0o700)
 
 
 def main():
@@ -97,7 +151,8 @@ def main():
                         check=True,
                     )
                     env["SHELL_EX_TEST_SUDO_ROOT"] = str(protected)
-                result = subprocess.run(command, env=env)
+                with password_sudo_fixture(root, env, elevated_sshd):
+                    result = subprocess.run(command, env=env)
                 if result.returncode:
                     log.seek(0)
                     print("OpenSSH fixture diagnostic log:\n" + log.read()[-12000:], file=sys.stderr)

@@ -33,6 +33,7 @@ jobs:
           SHELL_EX_TEST_SSHD_SUDO: '1'
           SHELL_EX_TEST_PTY: '1'
           SHELL_EX_TEST_DOCKER: '1'
+          SHELL_EX_TEST_PASSWORD_SUDO: '1'
         run: python3 scripts/ssh_fixture.py cargo test --locked -p shell-ex-core --test ssh_integration --test files_integration --test docker_integration -- --ignored --test-threads=1 --nocapture
   ui:
     runs-on: ubuntu-24.04

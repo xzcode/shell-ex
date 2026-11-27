@@ -17,6 +17,10 @@ async fn connection() -> (Arc<SshManager>, String) {
 }
 
 async fn connection_on(ssh: &SshManager) -> String {
+    connect_user(ssh, std::env::var("SHELL_EX_TEST_USER").unwrap()).await
+}
+
+async fn connect_user(ssh: &SshManager, user: String) -> String {
     let host = Host {
         id: "integration".into(),
         name: "Isolated loopback".into(),
@@ -25,7 +29,7 @@ async fn connection_on(ssh: &SshManager) -> String {
             .unwrap()
             .parse()
             .unwrap(),
-        username: std::env::var("SHELL_EX_TEST_USER").unwrap(),
+        username: user,
         group: "tests".into(),
         auth_method: "key".into(),
         credential_store: "local".into(),
@@ -695,4 +699,56 @@ async fn elevated_file_context_is_revocable_and_isolated() {
     assert!(files.list(&second_elevated, &root).await.is_ok());
     ssh.disconnect(&second).await.unwrap();
     assert!(files.list(&second_elevated, &root).await.is_err());
+}
+
+#[tokio::test]
+#[ignore = "requires disposable hosted runner password-sudo fixture"]
+async fn password_authorized_sftp_authenticates_and_reopens_atomic_channels() {
+    if std::env::var("SHELL_EX_TEST_PASSWORD_SUDO").as_deref() != Ok("1") {
+        eprintln!("Password-required sudo fixture not enabled");
+        return;
+    }
+    let root = std::env::var("SHELL_EX_TEST_SUDO_ROOT").unwrap();
+    let user = std::env::var("SHELL_EX_TEST_PASSWORD_USER").unwrap();
+    let password = zeroize::Zeroizing::new(std::env::var("SHELL_EX_TEST_SUDO_PASSWORD").unwrap());
+    let ssh = Arc::new(SshManager::new());
+    let session = connect_user(&ssh, user).await;
+    let files = FileService::new(ssh.clone());
+    assert!(files.list(&session, &root).await.is_err());
+    let denied = ssh.sudo_files_enable(&session).await.unwrap_err();
+    assert_eq!(denied.code, "SUDO_SFTP_DENIED");
+
+    let incorrect = ssh
+        .sudo_files_enable_with_password(&session, Some("incorrect-fixture-password".into()))
+        .await
+        .unwrap_err();
+    assert_eq!(incorrect.code, "SUDO_SFTP_AUTH_FAILED");
+
+    let elevated = ssh
+        .sudo_files_enable_with_password(&session, Some(password.to_string()))
+        .await
+        .unwrap();
+    let path = format!("{root}/password-authenticated.txt");
+    let saved = files
+        .save(&elevated, &path, "first", "missing")
+        .await
+        .unwrap();
+    // Timestamp caching is disabled for this test account. Atomic replacement
+    // therefore has to authenticate its own raw SFTP channel successfully.
+    let updated = files
+        .save(&elevated, &path, "second", &saved.version)
+        .await
+        .unwrap();
+    assert_eq!(updated.text, "second");
+    assert!(files.list(&session, &root).await.is_err());
+    assert!(ssh.exec(&elevated, "id").await.is_err());
+    files.remove(&elevated, &path, false).await.unwrap();
+    let transfers = TransferManager::new(ssh.clone(), 1);
+    transfers
+        .revoke_sudo_context(&session, &elevated)
+        .await
+        .unwrap();
+    assert!(files.list(&elevated, &root).await.is_err());
+    assert!(ssh.sudo_files_enable(&session).await.is_err());
+    ssh.disconnect(&session).await.unwrap();
 }
