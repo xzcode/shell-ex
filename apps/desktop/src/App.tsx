@@ -902,7 +902,7 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark">›_</span>
           <strong>Shell EX</strong>
-          <span className="version-tag">0.4.16</span>
+          <span className="version-tag">0.4.17</span>
         </div>
         <button className="button secondary small manage-hosts-button" onClick={() => setManagerOpen(true)}>
           <Server size={15} />{tr("连接管理")}

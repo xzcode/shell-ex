@@ -16,7 +16,7 @@ Install the [latest stable release](https://github.com/xzcode/shell-ex/releases/
 | Windows (x64) | `.exe` (NSIS) |
 | Linux (x64) | `.deb` |
 
-The release page includes SHA-256 checksums and build provenance for each installer. See [all releases](https://github.com/xzcode/shell-ex/releases) and the [v0.4.16 release notes](docs/releases/v0.4.16.md). macOS builds use ad-hoc signing, not Apple notarization; Windows builds may display an unrecognized-publisher warning. The Linux package targets compatible Debian-based systems.
+The release page includes SHA-256 checksums and build provenance for each installer. See [all releases](https://github.com/xzcode/shell-ex/releases) and the [v0.4.17 release notes](docs/releases/v0.4.17.md). macOS builds use ad-hoc signing, not Apple notarization; Windows builds may display an unrecognized-publisher warning. The Linux package targets compatible Debian-based systems.
 
 ## Preview
 
@@ -28,12 +28,12 @@ Historical v0.2.0 browser preview (disconnected, using TEST-NET example hosts). 
 
 | Area | Capabilities |
 | --- | --- |
-| Host management | Custom groups (including empty groups), favorites, search, duplicate/edit connections, SSH config import preview and encrypted migration |
+| Host management | Table-based connection manager overlay, sorting, adjustable columns, multiple independent sessions per connection, custom groups (including empty groups), favorites, search, duplicate/edit connections, SSH config import preview and encrypted migration |
 | Terminal | SSH password, private key, SSH agent and interactive authentication; local PTY; multiple tabs, horizontal/vertical splits, search, reconnect, fonts, themes and background image; terminal context menu |
-| Remote files | Bottom docked dual-pane SFTP browser, lazy directory tree, sortable/resizable columns, file metadata, multi-selection, creation, rename, permissions and drag-and-drop upload |
+| Remote files | Bottom docked dual-pane SFTP browser, lazy directory tree, sortable/resizable columns, file metadata, multi-selection, creation, rename, permissions and drag-and-drop upload, explicit passwordless sudo file mode |
 | Transfers | Upload/download, directory planning, overwrite policies, bounded concurrency, progress, pause/resume/cancel and SHA-256 verification |
 | Editor | Monaco, UTF-8 text, syntax highlighting, find/replace, conflict detection, atomic replacement and Save As |
-| Monitoring | Dockable/detachable Linux monitor; CPU, memory, swap, load, kernel, network throughput, unique local/shared filesystems, disk throughput, IOPS, utilization, latency, queue depth; sortable/searchable process list and CPU/RSS rankings |
+| Monitoring | Full-height left-side dockable/detachable Linux monitor; CPU, memory, swap, load, kernel, network throughput, unique local/shared filesystems, disk throughput, IOPS, utilization, latency, queue depth; sortable/searchable process list and CPU/RSS rankings |
 | Networking | SOCKS5, HTTP CONNECT, jump hosts, local/remote/dynamic SSH forwarding |
 | Operations | Compact quick commands; Docker containers, images, logs, start/stop/restart; explicit process signal actions in the main workspace |
 | Customization | Seven themes including Neutral Gray and Soft White; persistent layouts and column widths; multilingual interface |
@@ -96,7 +96,7 @@ CI, browser regression tests, native packaging and physical-device checks are di
 - The editor handles UTF-8 text up to 5 MiB. Download non-text files instead. Atomic replacement requires the server's OpenSSH `posix-rename` extension; traditional permissions and UID/GID are preserved, but ACLs/xattrs are not copied.
 - Transfers can resume within the same running application, not automatically after restart. Directory copies are limited to 1,000 files per operation and skip symbolic links with a report.
 - SSH config import supports a defined subset; it does not execute `Include`, `Match`, `ProxyCommand` or local commands. Unsupported routes are not silently converted to direct connections.
-- The file panel does not elevate privileges automatically. Interactive `sudo` remains subject to the remote server's policy.
+- The file panel does not elevate privileges automatically. Its opt-in sudo mode requires existing passwordless authorization for an OpenSSH `sftp-server` executable. It supports file and directory transfers and editing; leaving the mode cancels unfinished privileged transfers. Password-required sudo and elevated server-side archive generation are not yet supported. No sudoers settings are changed.
 - Linux monitoring depends on available procfs/sysfs and system utilities. The process list is bounded to 10,000 entries and a transport byte budget. Network filesystem capacity is shown, but NFS-specific I/O is not collected. Initial/missing disk samples are not fabricated. The detached monitor is read-only.
 - Native macOS docking/re-docking and certain clipboard/file picker interactions still require real-device validation.
 - Empty-group metadata and terminal wallpaper are local preferences not included in the older portable backup format. Signed auto-updates require a configured trusted public key and HTTPS endpoint and are disabled by default.
