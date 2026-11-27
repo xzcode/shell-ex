@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, ArrowDownUp, Server, Search, Plus, Star, Folder, Fo
 import { tr, getLocale } from "./i18n";
 import type { Host, Notify } from "./types";
 import { errorText, native } from "./api";
-import { IconButton, Modal } from "./ui";
+import { Modal } from "./ui";
 import { ResizeHandle, clampWidth } from "./ResizeHandle";
 import { fitFileColumnWidths, resizeFileColumnWidths, fileTableWidth } from "./fileColumnLayout";
 
@@ -128,7 +128,8 @@ export function HostManager(props: Props) {
   function showHostMenu(event: MouseEvent, host: Host, rightClick = false) {
     event.preventDefault(); event.stopPropagation();
     if (rightClick && !selected.has(host.id)) setSelected(new Set([host.id]));
-    setMenu(old => !rightClick && old?.kind === "host" && old.host.id === host.id ? null : { kind: "host", host, ...position(event, rightClick) });
+    const coords = position(event, rightClick);
+    setMenu(old => !rightClick && old?.kind === "host" && old.host.id === host.id ? null : { kind: "host", host, ...coords });
   }
   async function run(action: () => Promise<unknown>) {
     if (blocked || operationLock.current) return;
@@ -154,14 +155,14 @@ export function HostManager(props: Props) {
     <div className="host-manager-toolbar">
       <button className="button secondary small" disabled={blocked} onClick={() => props.onCreate(scope.kind === "group" ? scope.name : undefined)}><Plus size={15} />{tr("新建连接")}</button>
       <button className="button secondary small" disabled={blocked} onClick={props.onGroupCreate}><FolderPlus size={15} />{tr("新建分组")}</button>
-      <button className="button secondary small" data-manager-menu-trigger disabled={!native || blocked} onClick={e => setMenu(old => old?.kind === "import" ? null : { kind: "import", ...position(e) })}><Upload size={15} />{tr("导入连接")}</button>
+      <button className="button secondary small" data-manager-menu-trigger disabled={!native || blocked} onClick={e => { const coords = position(e); setMenu(old => old?.kind === "import" ? null : { kind: "import", ...coords }); }}><Upload size={15} />{tr("导入连接")}</button>
       <button className="button secondary small" disabled={!native || blocked} onClick={() => props.onData("export")}><Download size={15} />{tr("导出加密备份")}</button>
       <div className="flex-spacer" />
       <div className="host-manager-search"><Search size={14} /><input aria-label={tr("筛选主机")} placeholder={tr("筛选主机…")} value={query} onChange={e => { setQuery(e.target.value); setSelected(new Set()); anchor.current = null; }} /></div>
-      <IconButton title={tr("显示列")} active={menu?.kind === "columns"} onClick={() => {
+      <button type="button" className={"icon-button" + (menu?.kind === "columns" ? " active" : "")} data-manager-menu-trigger title={tr("显示列")} aria-label={tr("显示列")} onClick={() => {
         const rect = list.current?.getBoundingClientRect();
         setMenu(old => old?.kind === "columns" ? null : { kind: "columns", x: Math.max(6, Math.min((rect?.right || innerWidth) - 220, innerWidth - 235)), y: Math.max(6, rect?.top || 100) });
-      }}><SlidersHorizontal size={16} /></IconButton>
+      }}><SlidersHorizontal size={16} /></button>
     </div>
     <div className="host-manager-body">
       <aside className="host-manager-groups" aria-label={tr("分组")}>
@@ -172,7 +173,7 @@ export function HostManager(props: Props) {
             onContextMenu={e => { e.preventDefault(); setMenu({ kind: "group", group, ...position(e, true) }); }}>
           <button onClick={() => selectScope({ kind: "group", name: group })}><Folder size={14} /><span>{groupName(group)}</span><small>{hosts.filter(h => hostGroup(h) === group).length}</small></button>
           <button className="icon-button group-more" data-manager-menu-trigger aria-label={tr("{0} 分组操作", group)} disabled={blocked}
-            onClick={e => setMenu(old => old?.kind === "group" && old.group === group ? null : { kind: "group", group, ...position(e) })}><MoreHorizontal size={14}/></button>
+            onClick={e => { const coords = position(e); setMenu(old => old?.kind === "group" && old.group === group ? null : { kind: "group", group, ...coords }); }}><MoreHorizontal size={14}/></button>
         </div>)}
         <div className="flex-spacer" />
         <div className="host-manager-utilities">

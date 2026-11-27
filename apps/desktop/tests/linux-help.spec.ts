@@ -19,7 +19,8 @@ test("command help works offline with categories, bilingual search, stable layou
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.setViewportSize({ width: 960, height: 640 });
   await page.goto("/");
-  await page.getByRole("button", { name: "Linux 命令帮助", exact: true }).click();
+  await page.getByRole("button", { name: "连接管理", exact: true }).click();
+  await page.getByRole("dialog", { name: "连接管理", exact: true }).getByRole("button", { name: "Linux 命令帮助", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Linux 命令帮助", exact: true });
   const query = dialog.getByRole("textbox", { name: "搜索 Linux 命令" });
   const cards = dialog.locator(".linux-command-card");
@@ -49,7 +50,8 @@ test("command help works offline with categories, bilingual search, stable layou
   // Force an English interface; the command reference uses the same language preference.
   await page.evaluate(() => localStorage.setItem("shell-ex-language", "en"));
   await page.reload();
-  await page.getByRole("button", { name: "Linux command help", exact: true }).click();
+  await page.getByRole("button", { name: "Connection manager", exact: true }).click();
+  await page.getByRole("dialog", { name: "Connection manager", exact: true }).getByRole("button", { name: "Linux command help", exact: true }).click();
   const english = page.getByRole("dialog", { name: "Linux command help", exact: true });
   await english.getByRole("textbox", { name: "Search Linux commands" }).fill("disk usage");
   await expect(english.locator('[data-command="du"]')).toBeVisible();

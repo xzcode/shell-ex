@@ -60,7 +60,7 @@ test("manager opens independent sessions from one saved host and keeps the works
   await open();
   await expect(dialog).toBeVisible();
   expect(await terminal.boundingBox()).toEqual(original);
-  await expect(dialog.locator("th")).not.toContainText("连接状态");
+  await expect(dialog.getByRole("columnheader", { name: /连接状态/ })).toHaveCount(0);
   await expect(dialog.locator(".host-item .status-dot")).toHaveCount(0);
   await expect(dialog.locator(".host-item")).toHaveCount(1);
   const table = dialog.locator(".host-manager-table");
