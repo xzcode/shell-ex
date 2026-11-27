@@ -463,14 +463,20 @@ impl TransferManager {
         cancel: &CancellationToken,
     ) -> Result<Transfer> {
         if cancel.is_cancelled() {
-            return Err(AppError::new("TRANSFER_CANCELLED", "Archive creation cancelled"));
+            return Err(AppError::new(
+                "TRANSFER_CANCELLED",
+                "Archive creation cancelled",
+            ));
         }
         let sftp = self.inner.ssh.sftp(context_id).await?;
         let directory = format!("/tmp/.shell-ex-pack-{}", Uuid::new_v4());
         let archive = join_remote(&directory, "archive.tar.gz");
-        sftp.create_dir(&directory).await.map_err(sftp_error)?;
-        let result = async {
-            sftp.set_metadata(
+        // Set mode 0700 in the mkdir request itself. Creating a writable
+        // directory and chmodding it afterward would permit a local race.
+        let raw = self.inner.ssh.sftp_raw(context_id).await?;
+        let created = async {
+            raw.init().await.map_err(sftp_error)?;
+            raw.mkdir(
                 directory.clone(),
                 FileAttributes {
                     permissions: Some(0o700),
@@ -479,7 +485,16 @@ impl TransferManager {
             )
             .await
             .map_err(sftp_error)?;
-            let meta = sftp.symlink_metadata(&directory).await.map_err(sftp_error)?;
+            Ok::<_, AppError>(())
+        }
+        .await;
+        let _ = raw.close_session();
+        created?;
+        let result = async {
+            let meta = sftp
+                .symlink_metadata(&directory)
+                .await
+                .map_err(sftp_error)?;
             if !meta.file_type().is_dir()
                 || meta.uid != Some(0)
                 || meta.permissions.map(|mode| mode & 0o777) != Some(0o700)
@@ -494,7 +509,10 @@ impl TransferManager {
                 .pack_sudo_archive(context_id, &archive, parent, names, cancel)
                 .await?;
             if cancel.is_cancelled() {
-                return Err(AppError::new("TRANSFER_CANCELLED", "Archive creation cancelled"));
+                return Err(AppError::new(
+                    "TRANSFER_CANCELLED",
+                    "Archive creation cancelled",
+                ));
             }
             self.start_owned(
                 context_id.to_owned(),
