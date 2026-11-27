@@ -1073,7 +1073,8 @@ impl SshManager {
     }
     /// A dedicated uninitialized raw subsystem for negotiated SFTP extensions.
     pub async fn sftp_raw(&self, id: &str) -> Result<RawSftpSession> {
-        if let Some(context) = self.sudo_files.read().await.get(id).cloned() {
+        let elevated = self.sudo_files.read().await.get(id).cloned();
+        if let Some(context) = elevated {
             let stream = open_elevated_sftp_stream(
                 &context.session,
                 context.server_path,
@@ -1222,12 +1223,12 @@ async fn open_elevated_sftp_stream(
     primary: bool,
 ) -> Result<tokio::io::DuplexStream> {
     let mut channel = timeout(
-        Duration::from_secs(10),
+        Duration::from_secs(5),
         session.transport.channel_open_session(),
     )
     .await
     .map_err(|_| AppError::new("SUDO_SFTP_TIMEOUT", "Elevated SFTP channel timed out"))??;
-    let setup = timeout(Duration::from_secs(10), async {
+    let setup = timeout(Duration::from_secs(8), async {
         // server_path is selected exclusively from a fixed absolute allowlist.
         channel
             .exec(

@@ -13,6 +13,8 @@ test("manager opens independent sessions from one saved host and keeps the works
     };
     let callback = 0, count = 0, fail = false;
     const closed: string[] = [], monitors: string[] = [], files: string[] = [];
+    const revoked: string[] = [];
+    let elevated = 0;
     Object.defineProperty(window, "isTauri", { value: true });
     Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {
       metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } },
@@ -32,6 +34,10 @@ test("manager opens independent sessions from one saved host and keeps the works
             return { sessionId: "fixture-session-" + ++count, credentialSaveFailed: false };
           case "session_close": closed.push(args.sessionId); return null;
           case "plugin:dialog|message": return "确认";
+          case "sftp_sudo_enable":
+            return "sudo-context-" + args.sessionId + "-" + ++elevated;
+          case "sftp_sudo_disable":
+            revoked.push(args.contextId); return null;
           case "sftp_realpath": return args.path === "." ? "/app" : args.path;
           case "sftp_list":
             files.push(args.sessionId);
@@ -49,7 +55,7 @@ test("manager opens independent sessions from one saved host and keeps the works
       },
     }});
     Object.defineProperty(window, "__managerFixture", { value: { count: () => count, closed: () => closed,
-      fail: () => { fail = true; }, monitors: () => monitors, files: () => files } });
+      fail: () => { fail = true; }, monitors: () => monitors, files: () => files, revoked: () => revoked } });
   });
   await page.setViewportSize({ width: 1600, height: 960 });
   await page.goto("/");
@@ -60,7 +66,7 @@ test("manager opens independent sessions from one saved host and keeps the works
   await open();
   await expect(dialog).toBeVisible();
   expect(await terminal.boundingBox()).toEqual(original);
-  await expect(dialog.locator("th")).not.toContainText("连接状态");
+  await expect(dialog.getByRole("columnheader", { name: "连接状态", exact: true })).toHaveCount(0);
   await expect(dialog.locator(".host-item .status-dot")).toHaveCount(0);
   await expect(dialog.locator(".host-item")).toHaveCount(1);
   const table = dialog.locator(".host-manager-table");
@@ -77,6 +83,18 @@ test("manager opens independent sessions from one saved host and keeps the works
   await expect(dialog).toHaveCount(0);
   await expect(page.locator(".session-tab.selected")).toContainText("Session fixture");
   await expect(page.locator(".file-list tbody")).toContainText("fixture-session-1");
+  const sudo = page.locator(".sudo-mode-button");
+  await sudo.click();
+  await expect(sudo).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".file-list tbody")).toContainText("sudo-context-fixture-session-1-1");
+  await expect(page.locator(".file-panel").getByRole("button", { name: "上传", exact: true })).toBeDisabled();
+  await expect.poll(() => page.evaluate(() => (window as any).__managerFixture.monitors().at(-1))).toBe("fixture-session-1");
+  await sudo.click();
+  await expect(sudo).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".file-list tbody")).toContainText("fixture-session-1");
+  await expect.poll(() => page.evaluate(() => (window as any).__managerFixture.revoked())).toContain("sudo-context-fixture-session-1-1");
+  await sudo.click();
+  await expect(page.locator(".file-list tbody")).toContainText("sudo-context-fixture-session-1-2");
   await open();
   await expect(dialog.locator(".host-item")).toHaveCount(1);
   await row.dblclick();
@@ -84,6 +102,8 @@ test("manager opens independent sessions from one saved host and keeps the works
   await expect(page.locator(".session-tab")).toHaveCount(2);
   await expect(page.locator(".session-tab.selected")).toContainText("Session fixture (2)");
   await expect(page.locator(".file-list tbody")).toContainText("fixture-session-2");
+  await expect(sudo).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(() => page.evaluate(() => (window as any).__managerFixture.revoked())).toContain("sudo-context-fixture-session-1-2");
   await expect.poll(() => page.evaluate(() => (window as any).__managerFixture.monitors().at(-1))).toBe("fixture-session-2");
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("fixture-workspace") || "{}").hostIds?.length)).toBe(2);
   await page.locator(".session-tab").first().click();

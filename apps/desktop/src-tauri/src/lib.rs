@@ -762,10 +762,7 @@ async fn sftp_sudo_disable(
     session_id: String,
     context_id: String,
 ) -> Result<()> {
-    state
-        .ssh
-        .sudo_files_disable(&session_id, &context_id)
-        .await
+    state.ssh.sudo_files_disable(&session_id, &context_id).await
 }
 #[tauri::command]
 async fn sftp_realpath(
