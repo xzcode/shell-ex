@@ -86,12 +86,14 @@ export default function RemoteEditor({
   sessionId,
   path,
   plainText = false,
+  elevated = false,
   notify,
   onClose,
 }: {
   sessionId: string;
   path: string;
   plainText?: boolean;
+  elevated?: boolean;
   notify: Notify;
   onClose: () => void;
 }) {
@@ -169,7 +171,7 @@ export default function RemoteEditor({
   });
   return (
     <Modal
-      title={`${dirty ? "● " : ""}${targetPath.split("/").pop()}`}
+      title={`${elevated ? "[sudo] " : ""}${dirty ? "● " : ""}${targetPath.split("/").pop()}`}
       subtitle={file?.path || targetPath}
       onClose={close}
       wide

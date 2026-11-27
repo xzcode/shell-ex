@@ -753,6 +753,21 @@ async fn session_close(state: State<'_, AppState>, session_id: String, local: bo
     state.session_owner(local).close(session_id).await
 }
 #[tauri::command]
+async fn sftp_sudo_enable(state: State<'_, AppState>, session_id: String) -> Result<String> {
+    state.ssh.sudo_files_enable(&session_id).await
+}
+#[tauri::command]
+async fn sftp_sudo_disable(
+    state: State<'_, AppState>,
+    session_id: String,
+    context_id: String,
+) -> Result<()> {
+    state
+        .ssh
+        .sudo_files_disable(&session_id, &context_id)
+        .await
+}
+#[tauri::command]
 async fn sftp_realpath(
     state: State<'_, AppState>,
     session_id: String,
@@ -1169,6 +1184,8 @@ pub fn run() {
         terminal_resize,
         terminal_ack,
         session_close,
+        sftp_sudo_enable,
+        sftp_sudo_disable,
         sftp_realpath,
         sftp_list,
         sftp_mkdir,

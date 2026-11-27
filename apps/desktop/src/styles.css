@@ -3341,3 +3341,10 @@ thead { background: var(--surface-table-head); }
 .theme-mini-monitor { grid-column: 1; grid-row: 2 / 4; }
 .theme-mini-terminal { grid-column: 2; grid-row: 2; }
 .theme-mini-files { grid-column: 2; grid-row: 3; }
+
+/* Explicit privileged file mode: never rely on color alone to identify it. */
+.sudo-mode-button { flex-shrink: 0; white-space: nowrap; }
+.sudo-mode-button.sudo-active { color: var(--amber); border-color: var(--amber); font-weight: 600; }
+.sudo-mode-note { padding: 4px 9px; font-size: 10px; color: var(--amber); background: var(--surface-tools); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.sudo-error-row { display: flex; align-items: center; gap: 6px; padding-right: 8px; }
+.sudo-error-row .error-box { flex: 1; min-width: 0; }

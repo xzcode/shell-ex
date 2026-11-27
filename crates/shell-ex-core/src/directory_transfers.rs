@@ -52,6 +52,7 @@ impl TransferManager {
         local_root: String,
         remote_root: String,
     ) -> Result<DirectoryPlan> {
+        self.inner.ssh.require_transfer_session(&session_id).await?;
         if direction != "upload" && direction != "download" {
             return Err(AppError::new(
                 "INVALID_DIRECTION",

@@ -157,6 +157,7 @@ impl TransferManager {
         overwrite: bool,
         archive_dir: Option<String>,
     ) -> Result<Transfer> {
+        self.inner.ssh.require_transfer_session(&session_id).await?;
         if direction != "upload" && direction != "download" {
             return Err(AppError::new(
                 "INVALID_DIRECTION",
@@ -273,6 +274,7 @@ impl TransferManager {
         paths: Vec<String>,
         local_path: String,
     ) -> Result<Transfer> {
+        self.inner.ssh.require_transfer_session(&session_id).await?;
         if Self::download_destination_exists(&local_path).await? {
             return Err(destination_exists());
         }

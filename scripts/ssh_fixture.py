@@ -73,6 +73,7 @@ def main():
         with (root / "sshd.log").open("w+") as log:
             server_command = (["sudo", "-n"] if elevated_sshd else []) + [sshd, "-D", "-e", "-f", str(config)]
             server = subprocess.Popen(server_command, stdout=log, stderr=log)
+            protected = None
             try:
                 for _ in range(100):
                     if server.poll() is not None:
@@ -86,12 +87,24 @@ def main():
                 else:
                     raise RuntimeError("Test sshd never became ready")
                 print(f"Loopback OpenSSH fixture ready on 127.0.0.1:{port}", flush=True)
+                # This is a fixture-owned directory only. Never alter sudoers,
+                # the SSH user, or any production path. CI's runner already
+                # has passwordless sudo, and remains a non-root SSH login.
+                if elevated_sshd and os.geteuid() != 0:
+                    protected = root / "root-only-fixture"
+                    subprocess.run(
+                        ["sudo", "-n", "install", "-d", "-m", "0700", "-o", "root", "-g", "root", str(protected)],
+                        check=True,
+                    )
+                    env["SHELL_EX_TEST_SUDO_ROOT"] = str(protected)
                 result = subprocess.run(command, env=env)
                 if result.returncode:
                     log.seek(0)
                     print("OpenSSH fixture diagnostic log:\n" + log.read()[-12000:], file=sys.stderr)
                 return result.returncode
             finally:
+                if protected is not None:
+                    subprocess.run(["sudo", "-n", "rm", "-rf", "--", str(protected)], check=True)
                 if elevated_sshd and (root / "sshd.pid").exists():
                     # Only stop the PID written by this isolated fixture; do
                     # not touch the runner's system sshd service.

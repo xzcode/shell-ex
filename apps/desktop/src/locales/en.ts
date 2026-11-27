@@ -817,5 +817,11 @@ export const en: Readonly<Record<string, string>> = {
   "共 {0} 个连接": "{0} connections",
   "已选择 {0} 项": "{0} selected",
   "删除选中的 {0} 个连接及其保存的凭据？": "Delete the {0} selected connections and their saved credentials?",
-  "复制主机地址": "Copy host address"
+  "复制主机地址": "Copy host address",
+  "开启后，文件浏览器可使用 root 权限操作。新建文件可能属于 root；普通终端与其他会话不受影响。仅支持服务器已授权的免密 sudo，不修改服务器配置。": "The file browser will operate as root. New files may be owned by root. Other sessions and the terminal are unaffected. Only existing passwordless sudo authorization is supported; server configuration is not changed.",
+  "启用 sudo 文件模式": "Enable sudo file mode",
+  "退出 sudo 文件模式": "Exit sudo file mode",
+  "sudo 模式暂不支持文件传输，请退出 sudo 模式。": "Transfers are not yet available in sudo mode. Exit sudo mode to transfer files.",
+  "root 文件模式 · 新建文件可能属于 root · 暂不支持文件传输": "Root file mode · New files may be owned by root · Transfers unavailable",
+  "使用 sudo 重试": "Retry with sudo"
 };

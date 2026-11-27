@@ -155,12 +155,79 @@ export function FilePanel({
   function resizeColumn(index: number, width: number) {
     onColumnWidths(resizeFileColumnWidths(renderedColumnWidths, index, width, fileListWidth));
   }
-  const sessionIdentity = useRef(session?.id);
-  sessionIdentity.current = session?.id;
-  const remote =
+  const normalRemote =
     session && !session.local && session.status === "connected"
       ? session
       : null;
+  const [sudoContext, setSudoContext] = useState<{ ownerId: string; id: string } | null>(null);
+  const [sudoBusy, setSudoBusy] = useState(false);
+  const sudoLock = useRef(false);
+  const mounted = useRef(false);
+  const owner = useRef(normalRemote?.id);
+  owner.current = normalRemote?.id;
+  const elevated = sudoContext?.ownerId === normalRemote?.id ? sudoContext : null;
+  const remote = normalRemote && elevated ? { ...normalRemote, id: elevated.id } : normalRemote;
+  const sessionIdentity = useRef(remote?.id);
+  sessionIdentity.current = remote?.id;
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  useEffect(() => {
+    if (sudoContext && sudoContext.ownerId !== normalRemote?.id) setSudoContext(null);
+  }, [normalRemote?.id, sudoContext]);
+  useEffect(() => {
+    if (!sudoContext) return;
+    // A capability never survives the owning file panel or a tab switch.
+    return () => {
+      void api("sftp_sudo_disable", { sessionId: sudoContext.ownerId, contextId: sudoContext.id }).catch(() => {});
+    };
+  }, [sudoContext]);
+  async function toggleSudo() {
+    if (!normalRemote || sudoLock.current || working || editing || operation || directoryPlan) return;
+    const ownerId = normalRemote.id;
+    sudoLock.current = true;
+    setSudoBusy(true);
+    try {
+      if (elevated) {
+        await api("sftp_sudo_disable", { sessionId: ownerId, contextId: elevated.id });
+        if (owner.current !== ownerId || !mounted.current) return;
+        request.current++;
+        setEntries([]);
+        setSelected(new Set());
+        setError("");
+        setMenu(null);
+        setSudoContext(null);
+        return;
+      }
+      if (!(await confirmAction(
+        tr("开启后，文件浏览器可使用 root 权限操作。新建文件可能属于 root；普通终端与其他会话不受影响。仅支持服务器已授权的免密 sudo，不修改服务器配置。"),
+        tr("启用 sudo 文件模式"),
+      ))) return;
+      if (owner.current !== ownerId || !mounted.current) return;
+      const id = await api<string>("sftp_sudo_enable", { sessionId: ownerId });
+      if (owner.current !== ownerId || !mounted.current) {
+        void api("sftp_sudo_disable", { sessionId: ownerId, contextId: id }).catch(() => {});
+        return;
+      }
+      request.current++;
+      setEntries([]);
+      setSelected(new Set());
+      setError("");
+      setMenu(null);
+      setSudoContext({ ownerId, id });
+    } catch (e) {
+      notify(errorText(e), "error");
+    } finally {
+      sudoLock.current = false;
+      if (mounted.current) setSudoBusy(false);
+    }
+  }
+  function blockSudoTransfer() {
+    if (!elevated) return false;
+    notify(tr("sudo 模式暂不支持文件传输，请退出 sudo 模式。"), "info");
+    return true;
+  }
   const load = useCallback(async () => {
     if (!remote) return;
     const serial = ++request.current;
@@ -259,11 +326,12 @@ export function FilePanel({
     }
   }
   async function upload(paths?: string[]) {
-    if (!remote) return;
+    if (!remote || blockSudoTransfer()) return;
     try {
       const result = paths || (await chooseFile({ multiple: true }));
-      if (!result) return;
+      if (!result || sessionIdentity.current !== remote.id) return;
       for (const localPath of typeof result === "string" ? [result] : result) {
+        if (sessionIdentity.current !== remote.id) return;
         const name = localPath.split(/[\\/]/).pop()!;
         const exists = entries.some((f) => f.name === name);
         if (
@@ -327,6 +395,7 @@ export function FilePanel({
     if (!remote) return;
     setWorking(true);
     try {
+      if (blockSudoTransfer()) return;
       const selected = await chooseFile({ directory: true });
       if (typeof selected !== "string") return;
       const rootName = (direction === "upload" ? selected : entry!.path)
@@ -359,7 +428,7 @@ export function FilePanel({
     }
   }
   async function startDirectory() {
-    if (!directoryPlan) return;
+    if (!directoryPlan || blockSudoTransfer()) return;
     setWorking(true);
     try {
       const result = await api<{
@@ -395,7 +464,7 @@ export function FilePanel({
     }
   }
   async function download(entry: FileEntry) {
-    if (!remote) return;
+    if (!remote || blockSudoTransfer()) return;
     if (entry.isDir) {
       await planDirectory("download", entry);
       return;
@@ -417,7 +486,7 @@ export function FilePanel({
     }
   }
   async function archiveDownload(targets: FileEntry[]) {
-    if (!remote || !targets.length) return;
+    if (!remote || !targets.length || blockSudoTransfer()) return;
     setWorking(true);
     try {
       const name = targets.length === 1 ? targets[0].name + ".tar.gz" : "shell-ex-archive.tar.gz";
@@ -537,7 +606,7 @@ export function FilePanel({
   const single = menuTargets.length === 1 ? menuTargets[0] : undefined;
   const canOpen = !!single;
   const canEdit = !!single && !single.isDir;
-  const canPack = menuTargets.length > 0 && menuTargets.every((entry) => !entry.isSymlink);
+  const canPack = !elevated && menuTargets.length > 0 && menuTargets.every((entry) => !entry.isSymlink);
   function runMenu(action: () => void) {
     setMenu(null);
     action();
@@ -579,12 +648,18 @@ export function FilePanel({
         >
           <RefreshCw size={15} className={loading ? "spin" : ""} />
         </IconButton>
+        <button className={"button secondary small sudo-mode-button" + (elevated ? " sudo-active" : "")}
+          aria-pressed={!!elevated} title={tr(elevated ? "退出 sudo 文件模式" : "启用 sudo 文件模式")}
+          disabled={sudoBusy || working || !!editing || !!operation || !!directoryPlan}
+          onClick={() => void toggleSudo()}>
+          <Shield size={14} />{elevated ? "sudo · root" : "sudo"}
+        </button>
         <span className="toolbar-separator" />
-        <button className="button subtle small" onClick={() => void upload()}>
+        <button className="button subtle small" disabled={!!elevated} onClick={() => void upload()}>
           <Upload size={14} />{tr("上传")}</button>
         <IconButton
           title={tr("上传文件夹")}
-          disabled={working}
+          disabled={working || !!elevated}
           onClick={() => void planDirectory("upload")}
         >
           <FolderUp size={15} />
@@ -600,7 +675,7 @@ export function FilePanel({
         </IconButton>
         <IconButton
           title={tr("下载选中的文件或目录")}
-          disabled={chosen.length !== 1 || working}
+          disabled={chosen.length !== 1 || working || !!elevated}
           onClick={() => void download(chosen[0])}
         >
           <Download size={15} />
@@ -634,7 +709,13 @@ export function FilePanel({
           <Trash2 size={15} />
         </IconButton>
       </div>
-      {error && <ErrorBox message={error} retry={() => void load()} />}
+      {elevated && <div className="sudo-mode-note">{tr("root 文件模式 · 新建文件可能属于 root · 暂不支持文件传输")}</div>}
+      {error && <div className="sudo-error-row">
+        <ErrorBox message={error} retry={() => void load()} />
+        {!elevated && /permission.?denied|access.?denied|权限/i.test(error) && (
+          <button className="button secondary small" disabled={sudoBusy || working} onClick={() => void toggleSudo()}>{tr("使用 sudo 重试")}</button>
+        )}
+      </div>}
       <div className="file-explorer" ref={explorerRef}>
         <DirectoryTree key={remote.id} sessionId={remote.id} currentPath={path}
           onNavigate={navigate} width={Math.min(treeWidth, maxTreeWidth)} />
@@ -815,7 +896,7 @@ export function FilePanel({
           {menu.section === "open" && canEdit && <div className="file-submenu">
             <button role="menuitem" onClick={() => runMenu(() => openEntry(single!, false))}>{tr("内置代码编辑器")}</button>
             <button role="menuitem" onClick={() => runMenu(() => openEntry(single!, true))}>{tr("纯文本编辑器")}</button>
-            <button role="menuitem" onClick={() => runMenu(() => void download(single!))}>{tr("下载本地副本")}</button>
+            <button role="menuitem" disabled={!!elevated} onClick={() => runMenu(() => void download(single!))}>{tr("下载本地副本")}</button>
           </div>}
           <button role="menuitem" aria-expanded={menu.section === "editor"} onClick={() => setMenu({ ...menu, section: menu.section === "editor" ? null : "editor" })}>{tr("选择默认文本编辑器")}<ChevronRight size={13} /></button>
           {menu.section === "editor" && <div className="file-submenu">
@@ -825,9 +906,9 @@ export function FilePanel({
           <div className="menu-divider" role="separator" />
           <button role="menuitem" onClick={() => runMenu(() => void copyPaths(menuTargets))}>{tr("复制路径")}</button>
           <div className="menu-divider" role="separator" />
-          <button role="menuitem" disabled={!single} onClick={() => runMenu(() => void download(single!))}>{tr("下载")}</button>
-          <button role="menuitem" onClick={() => runMenu(() => void upload())}>{tr("上传…")}</button>
-          <button role="menuitem" onClick={() => runMenu(() => void planDirectory("upload"))}>{tr("上传文件夹")}</button>
+          <button role="menuitem" disabled={!single || !!elevated} onClick={() => runMenu(() => void download(single!))}>{tr("下载")}</button>
+          <button role="menuitem" disabled={!!elevated} onClick={() => runMenu(() => void upload())}>{tr("上传…")}</button>
+          <button role="menuitem" disabled={!!elevated} onClick={() => runMenu(() => void planDirectory("upload"))}>{tr("上传文件夹")}</button>
           <div className="menu-divider" role="separator" />
           <button role="menuitem" disabled={!canPack} onClick={() => runMenu(() => void archiveDownload(menuTargets))}>{tr("打包传输 (.tar.gz)")}</button>
           <div className="menu-divider" role="separator" />
@@ -956,6 +1037,7 @@ export function FilePanel({
         >
           <EditorDialog
             sessionId={remote.id}
+            elevated={!!elevated}
             path={editing}
             plainText={plainEditor}
             notify={notify}

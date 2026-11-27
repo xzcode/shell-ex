@@ -11,6 +11,12 @@ use std::{sync::Arc, time::Duration};
 use tokio::time::{sleep, timeout};
 
 async fn connection() -> (Arc<SshManager>, String) {
+    let ssh = Arc::new(SshManager::new());
+    let id = connection_on(&ssh).await;
+    (ssh, id)
+}
+
+async fn connection_on(ssh: &SshManager) -> String {
     let host = Host {
         id: "integration".into(),
         name: "Isolated loopback".into(),
@@ -33,14 +39,13 @@ async fn connection() -> (Arc<SshManager>, String) {
         color: "#123456".into(),
         notes: String::new(),
     };
-    let ssh = Arc::new(SshManager::new());
     let probe = ssh.probe(&host).await.unwrap();
     let sink: EventSink = Arc::new(|_| {});
     let id = ssh
         .connect_service(&host, SecretInput::default(), probe.fingerprint, sink)
         .await
         .unwrap();
-    (ssh, id)
+    id
 }
 async fn wait_for(manager: &TransferManager, id: &str, states: &[&str]) -> Transfer {
     timeout(Duration::from_secs(90), async {
@@ -487,4 +492,59 @@ async fn monitor_storage_io_and_process_interval_sampling() {
     }
     monitor.forget_session(&session).await;
     ssh.disconnect(&session).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires isolated ssh fixture with non-root passwordless sudo"]
+async fn elevated_file_context_is_revocable_and_isolated() {
+    let Ok(root) = std::env::var("SHELL_EX_TEST_SUDO_ROOT") else {
+        eprintln!("No isolated non-root sudo fixture; elevated SFTP test skipped");
+        return;
+    };
+    let (ssh, first) = connection().await;
+    let second = connection_on(&ssh).await;
+    let files = FileService::new(ssh.clone());
+    assert!(files.list(&first, &root).await.is_err());
+    assert!(files.list(&second, &root).await.is_err());
+
+    let elevated = ssh.sudo_files_enable(&first).await.unwrap();
+    assert!(files.list(&elevated, &root).await.is_ok());
+    assert!(files.list(&first, &root).await.is_err());
+    assert!(files.list(&second, &root).await.is_err());
+    assert!(ssh.exec(&elevated, "id").await.is_err());
+    let path = format!("{root}/config.txt");
+    let saved = files
+        .save(&elevated, &path, "first\n", "missing")
+        .await
+        .unwrap();
+    let updated = files
+        .save(&elevated, &path, "second\n", &saved.version)
+        .await
+        .unwrap();
+    assert_eq!(updated.text, "second\n");
+    let entries = files.list(&elevated, &root).await.unwrap();
+    assert_eq!(entries[0].uid, Some(0));
+    let manager = TransferManager::new(ssh.clone(), 1);
+    let transfer_error = manager
+        .start(
+            elevated.clone(),
+            "download".into(),
+            format!("{root}/must-not-download"),
+            path.clone(),
+            false,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(transfer_error.code, "SUDO_TRANSFER_UNAVAILABLE");
+    assert!(ssh.sudo_files_disable(&second, &elevated).await.is_err());
+    files.remove(&elevated, &path, false).await.unwrap();
+    ssh.sudo_files_disable(&first, &elevated).await.unwrap();
+    assert!(files.list(&elevated, &root).await.is_err());
+    assert!(files.list(&first, &root).await.is_err());
+
+    let second_elevated = ssh.sudo_files_enable(&second).await.unwrap();
+    ssh.disconnect(&first).await.unwrap();
+    assert!(files.list(&second_elevated, &root).await.is_ok());
+    ssh.disconnect(&second).await.unwrap();
+    assert!(files.list(&second_elevated, &root).await.is_err());
 }

@@ -177,6 +177,17 @@ pub(crate) struct SshSession {
     flow: Arc<OutputFlow>,
     host_id: String,
 }
+// An elevated file capability is deliberately not an SSH session ID. It
+// cannot be used for terminals, command execution, monitoring or forwarding.
+#[derive(Clone)]
+struct SudoFileContext {
+    owner_id: String,
+    session: Arc<SshSession>,
+    server_path: &'static str,
+    cancel: CancellationToken,
+    sftp: Arc<SftpSession>,
+}
+
 struct AuthRequest {
     prompts: usize,
     reply: oneshot::Sender<Vec<String>>,
@@ -186,6 +197,7 @@ struct AuthRequest {
 pub struct SshManager {
     sessions: Arc<RwLock<HashMap<String, Arc<SshSession>>>>,
     challenges: Arc<Mutex<HashMap<String, AuthRequest>>>,
+    sudo_files: Arc<RwLock<HashMap<String, SudoFileContext>>>,
 }
 impl SshManager {
     pub fn new() -> Self {
@@ -914,7 +926,131 @@ impl SshManager {
         let _ = channel.close().await;
         result?
     }
+    /// Open a distinct, revocable SFTP capability using the server's existing
+    /// non-interactive sudo policy. No password or sudoers change is attempted.
+    pub async fn sudo_files_enable(&self, id: &str) -> Result<String> {
+        let session = self.session(id).await?;
+        const PATHS: [&str; 3] = [
+            "/usr/lib/openssh/sftp-server",
+            "/usr/libexec/openssh/sftp-server",
+            "/usr/lib/ssh/sftp-server",
+        ];
+        let probe = self
+            .exec(
+                id,
+                "for p in /usr/lib/openssh/sftp-server /usr/libexec/openssh/sftp-server /usr/lib/ssh/sftp-server; do if [ -x \"$p\" ]; then printf '%s\\n' \"$p\"; exit 0; fi; done; exit 1",
+            )
+            .await?;
+        let server_path = PATHS
+            .into_iter()
+            .find(|path| probe.status == 0 && probe.stdout.trim() == *path)
+            .ok_or_else(|| {
+                AppError::new(
+                    "SUDO_SFTP_SERVER_MISSING",
+                    "OpenSSH sftp-server was not found at a supported path",
+                )
+            })?;
+        let cancel = session.cancel.child_token();
+        let initialized = timeout(Duration::from_secs(20), async {
+            let stream =
+                open_elevated_sftp_stream(&session, server_path, cancel.clone(), true).await?;
+            SftpSession::new(stream).await.map_err(|_| {
+                AppError::new(
+                    "SUDO_SFTP_DENIED",
+                    "The server did not allow non-interactive sudo SFTP. Password-based sudo is not supported yet.",
+                )
+            })
+        })
+        .await;
+        let sftp = match initialized {
+            Ok(Ok(sftp)) => Arc::new(sftp),
+            Ok(Err(error)) => {
+                cancel.cancel();
+                return Err(error);
+            }
+            Err(_) => {
+                cancel.cancel();
+                return Err(AppError::new(
+                    "SUDO_SFTP_TIMEOUT",
+                    "Elevated SFTP initialization timed out",
+                ));
+            }
+        };
+        sftp.set_timeout(30);
+        let context_id = Uuid::new_v4().to_string();
+        {
+            let mut contexts = self.sudo_files.write().await;
+            if cancel.is_cancelled() {
+                return Err(AppError::new("SESSION_CLOSED", "SSH session has ended"));
+            }
+            if contexts
+                .values()
+                .any(|c| c.owner_id == id && !c.cancel.is_cancelled())
+            {
+                cancel.cancel();
+                return Err(AppError::new(
+                    "SUDO_SFTP_ALREADY_ACTIVE",
+                    "An elevated file context is already active for this session",
+                ));
+            }
+            contexts.insert(
+                context_id.clone(),
+                SudoFileContext {
+                    owner_id: id.to_owned(),
+                    session,
+                    server_path,
+                    cancel: cancel.clone(),
+                    sftp,
+                },
+            );
+        }
+        let contexts = Arc::downgrade(&self.sudo_files);
+        let cleanup_id = context_id.clone();
+        tokio::spawn(async move {
+            cancel.cancelled().await;
+            if let Some(contexts) = contexts.upgrade() {
+                contexts.write().await.remove(&cleanup_id);
+            }
+        });
+        Ok(context_id)
+    }
+
+    pub async fn sudo_files_disable(&self, owner_id: &str, context_id: &str) -> Result<()> {
+        let mut contexts = self.sudo_files.write().await;
+        if let Some(context) = contexts.get(context_id) {
+            if context.owner_id != owner_id {
+                return Err(AppError::new(
+                    "SUDO_SFTP_OWNER_MISMATCH",
+                    "The elevated file context belongs to a different SSH session",
+                ));
+            }
+        }
+        if let Some(context) = contexts.remove(context_id) {
+            context.cancel.cancel();
+        }
+        Ok(())
+    }
+
+    // Transfers are not yet exposed to privileged capabilities. They may
+    // outlive a file panel, so revocation and cleanup need a separate design.
+    pub(crate) async fn require_transfer_session(&self, id: &str) -> Result<()> {
+        if self.sudo_files.read().await.contains_key(id) {
+            return Err(AppError::new(
+                "SUDO_TRANSFER_UNAVAILABLE",
+                "File transfers are not available in sudo mode",
+            ));
+        }
+        self.session(id).await?;
+        Ok(())
+    }
+
     pub async fn sftp(&self, id: &str) -> Result<Arc<SftpSession>> {
+        if let Some(context) = self.sudo_files.read().await.get(id).cloned() {
+            if context.cancel.is_cancelled() {
+                return Err(AppError::new("SESSION_CLOSED", "Elevated SFTP has ended"));
+            }
+            return Ok(context.sftp);
+        }
         let session = self.session(id).await?;
         let mut cached = session.sftp.lock().await;
         if let Some(sftp) = cached.as_ref() {
@@ -937,6 +1073,16 @@ impl SshManager {
     }
     /// A dedicated uninitialized raw subsystem for negotiated SFTP extensions.
     pub async fn sftp_raw(&self, id: &str) -> Result<RawSftpSession> {
+        if let Some(context) = self.sudo_files.read().await.get(id).cloned() {
+            let stream = open_elevated_sftp_stream(
+                &context.session,
+                context.server_path,
+                context.cancel,
+                false,
+            )
+            .await?;
+            return Ok(RawSftpSession::new(stream));
+        }
         let session = self.session(id).await?;
         timeout(Duration::from_secs(15), async {
             let mut channel = session.transport.channel_open_session().await?;
@@ -1067,6 +1213,80 @@ fn expand_home(path: &str) -> std::path::PathBuf {
     }
     path.into()
 }
+// Pump binary SFTP data without a PTY. Keep the channel write half so every
+// primary or atomic-rename channel can be closed on capability revocation.
+async fn open_elevated_sftp_stream(
+    session: &SshSession,
+    server_path: &'static str,
+    cancel: CancellationToken,
+    primary: bool,
+) -> Result<tokio::io::DuplexStream> {
+    let mut channel = timeout(
+        Duration::from_secs(10),
+        session.transport.channel_open_session(),
+    )
+    .await
+    .map_err(|_| AppError::new("SUDO_SFTP_TIMEOUT", "Elevated SFTP channel timed out"))??;
+    let setup = timeout(Duration::from_secs(10), async {
+        // server_path is selected exclusively from a fixed absolute allowlist.
+        channel
+            .exec(
+                true,
+                format!("sudo -n -u root -- {server_path}").into_bytes(),
+            )
+            .await?;
+        wait_success(&mut channel, "sudo SFTP command").await
+    })
+    .await;
+    if !matches!(setup, Ok(Ok(()))) || cancel.is_cancelled() {
+        let _ = timeout(Duration::from_secs(2), channel.close()).await;
+        return Err(AppError::new(
+            "SUDO_SFTP_DENIED",
+            "The server did not allow non-interactive sudo SFTP. Password-based sudo is not supported yet.",
+        ));
+    }
+    let (mut reader, writer) = channel.split();
+    let (local, bridge) = tokio::io::duplex(64 * 1024);
+    let (mut input, mut output) = tokio::io::split(bridge);
+    tokio::spawn(async move {
+        let send = async {
+            let mut buf = [0_u8; 16 * 1024];
+            while let Ok(n) = input.read(&mut buf).await {
+                if n == 0 || writer.data(&buf[..n]).await.is_err() {
+                    break;
+                }
+            }
+        };
+        let receive = async {
+            while let Some(message) = reader.wait().await {
+                match message {
+                    ChannelMsg::Data { data } => {
+                        if output.write_all(&data).await.is_err() {
+                            break;
+                        }
+                    }
+                    ChannelMsg::Close | ChannelMsg::Eof | ChannelMsg::ExitStatus { .. } => break,
+                    // stderr is not part of the binary SFTP protocol.
+                    _ => {}
+                }
+            }
+        };
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => {}
+            _ = send => {}
+            _ = receive => {}
+        }
+        if primary {
+            cancel.cancel();
+        }
+        drop(input);
+        drop(output);
+        let _ = timeout(Duration::from_secs(2), writer.close()).await;
+    });
+    Ok(local)
+}
+
 async fn wait_success(channel: &mut Channel<client::Msg>, what: &str) -> Result<()> {
     while let Some(message) = channel.wait().await {
         match message {
