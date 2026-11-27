@@ -20,7 +20,7 @@ const columns = [
 ] as const;
 type Key = typeof columns[number]["key"];
 type Column = typeof columns[number];
-type Scope = { kind: "all" | "favorites" } | { kind: "group"; name: string };
+type Scope = { kind: "all" } | { kind: "favorites" } | { kind: "group"; name: string };
 type Menu = { kind: "host"; host: Host; x: number; y: number } | { kind: "group"; group: string; x: number; y: number } | { kind: "columns" | "import"; x: number; y: number };
 const PREFS = "shell-ex-host-manager-columns-v1";
 const ACTION_WIDTH = 48;
