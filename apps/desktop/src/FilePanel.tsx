@@ -161,6 +161,9 @@ export function FilePanel({
       : null;
   const [sudoContext, setSudoContext] = useState<{ ownerId: string; id: string } | null>(null);
   const [sudoBusy, setSudoBusy] = useState(false);
+  const [sudoDialog, setSudoDialog] = useState<{ ownerId: string; message: string } | null>(null);
+  const [sudoPassword, setSudoPassword] = useState("");
+  const sudoAttempt = useRef(0);
   const sudoLock = useRef(false);
   const mounted = useRef(false);
   const owner = useRef(normalRemote?.id);
@@ -175,7 +178,12 @@ export function FilePanel({
   }, []);
   useEffect(() => {
     if (sudoContext && sudoContext.ownerId !== normalRemote?.id) setSudoContext(null);
-  }, [normalRemote?.id, sudoContext]);
+    if (sudoDialog && sudoDialog.ownerId !== normalRemote?.id) {
+      sudoAttempt.current++;
+      setSudoDialog(null);
+      setSudoPassword("");
+    }
+  }, [normalRemote?.id, sudoContext, sudoDialog]);
   useEffect(() => {
     if (!sudoContext) return;
     // A capability never survives the owning file panel or a tab switch.
@@ -183,9 +191,49 @@ export function FilePanel({
       void api("sftp_sudo_disable", { sessionId: sudoContext.ownerId, contextId: sudoContext.id }).catch(() => {});
     };
   }, [sudoContext]);
+  function closeSudoDialog() {
+    sudoAttempt.current++;
+    setSudoDialog(null);
+    setSudoPassword("");
+  }
+  async function activateSudo(ownerId: string, attempt: number, password?: string) {
+    const id = await api<string>("sftp_sudo_enable", { sessionId: ownerId, password: password ?? null });
+    if (owner.current !== ownerId || !mounted.current || sudoAttempt.current !== attempt) {
+      void api("sftp_sudo_disable", { sessionId: ownerId, contextId: id }).catch(() => {});
+      return;
+    }
+    request.current++;
+    setEntries([]);
+    setSelected(new Set());
+    setError("");
+    setMenu(null);
+    setSudoDialog(null);
+    setSudoPassword("");
+    setSudoContext({ ownerId, id });
+  }
+  async function submitSudoPassword() {
+    if (!sudoDialog || !sudoPassword || sudoLock.current || owner.current !== sudoDialog.ownerId) return;
+    const ownerId = sudoDialog.ownerId;
+    const attempt = ++sudoAttempt.current;
+    const password = sudoPassword;
+    setSudoPassword("");
+    setSudoDialog({ ownerId, message: "" });
+    sudoLock.current = true;
+    setSudoBusy(true);
+    try {
+      await activateSudo(ownerId, attempt, password);
+    } catch (e) {
+      if (mounted.current && owner.current === ownerId && sudoAttempt.current === attempt)
+        setSudoDialog({ ownerId, message: errorText(e) });
+    } finally {
+      sudoLock.current = false;
+      if (mounted.current) setSudoBusy(false);
+    }
+  }
   async function toggleSudo() {
     if (!normalRemote || sudoLock.current || working || editing || operation || directoryPlan) return;
     const ownerId = normalRemote.id;
+    const attempt = ++sudoAttempt.current;
     sudoLock.current = true;
     setSudoBusy(true);
     try {
@@ -201,23 +249,19 @@ export function FilePanel({
         return;
       }
       if (!(await confirmAction(
-        tr("开启后，文件浏览器可使用 root 权限操作。新建文件可能属于 root；普通终端与其他会话不受影响。仅支持服务器已授权的免密 sudo，不修改服务器配置。"),
+        tr("开启后，文件浏览器可使用 root 权限操作。新建文件可能属于 root；普通终端与其他会话不受影响。遵循服务器现有 sudo 授权，不修改服务器配置。"),
         tr("启用 sudo 文件模式"),
       ))) return;
       if (owner.current !== ownerId || !mounted.current) return;
-      const id = await api<string>("sftp_sudo_enable", { sessionId: ownerId });
-      if (owner.current !== ownerId || !mounted.current) {
-        void api("sftp_sudo_disable", { sessionId: ownerId, contextId: id }).catch(() => {});
-        return;
-      }
-      request.current++;
-      setEntries([]);
-      setSelected(new Set());
-      setError("");
-      setMenu(null);
-      setSudoContext({ ownerId, id });
+      await activateSudo(ownerId, attempt);
     } catch (e) {
-      notify(errorText(e), "error");
+      if (!elevated && mounted.current && owner.current === ownerId && sudoAttempt.current === attempt
+          && e && typeof e === "object" && "code" in e && e.code === "SUDO_SFTP_DENIED") {
+        setSudoPassword("");
+        setSudoDialog({ ownerId, message: "" });
+      } else {
+        notify(errorText(e), "error");
+      }
     } finally {
       sudoLock.current = false;
       if (mounted.current) setSudoBusy(false);
@@ -920,6 +964,24 @@ export function FilePanel({
           <div className="menu-divider" role="separator" />
           <button role="menuitem" disabled={!single || single.isSymlink} onClick={() => runMenu(() => showOperation("chmod", single))}>{tr("文件权限…")}</button>
         </div>, document.body)}
+      {sudoDialog && sudoDialog.ownerId === normalRemote?.id && (
+        <Modal title={tr("sudo 密码授权")}
+          subtitle={tr("免密 sudo 未获授权。如服务器允许密码授权，请输入当前 sudo 用户所需的密码。")}
+          onClose={closeSudoDialog}
+          footer={<>
+            <button className="button secondary" onClick={closeSudoDialog}>{tr("取消")}</button>
+            <button className="button primary" disabled={sudoBusy || !sudoPassword} onClick={() => void submitSudoPassword()}>
+              {sudoBusy ? <Busy /> : tr("授权")}
+            </button>
+          </>}>
+          {sudoDialog.message && <ErrorBox message={sudoDialog.message} />}
+          <Field label={tr("sudo 密码")} hint={tr("仅用于本次文件授权，退出后释放，不保存到连接配置或密码库。")}>
+            <input type="password" autoComplete="off" autoFocus disabled={sudoBusy}
+              value={sudoPassword} onChange={e => setSudoPassword(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") void submitSudoPassword(); }} />
+          </Field>
+        </Modal>
+      )}
       {directoryPlan && (
         <Modal
           title={tr("目录传输预览")}

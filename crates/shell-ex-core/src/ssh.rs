@@ -26,6 +26,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 const FRAME_SIZE: usize = 16 * 1024;
 const OUTPUT_WINDOW: usize = 32;
@@ -186,6 +187,7 @@ struct SudoFileContext {
     server_path: &'static str,
     cancel: CancellationToken,
     sftp: Arc<SftpSession>,
+    password: Option<Arc<Zeroizing<String>>>,
     closing: bool,
 }
 
@@ -928,8 +930,29 @@ impl SshManager {
         result?
     }
     /// Open a distinct, revocable SFTP capability using the server's existing
-    /// non-interactive sudo policy. No password or sudoers change is attempted.
+    /// sudo policy. No password or sudoers settings are persisted.
     pub async fn sudo_files_enable(&self, id: &str) -> Result<String> {
+        self.sudo_files_enable_with_password(id, None).await
+    }
+
+    pub async fn sudo_files_enable_with_password(
+        &self,
+        id: &str,
+        password: Option<String>,
+    ) -> Result<String> {
+        // Keep the credential zeroizing and scoped to the active file context;
+        // raw SFTP channels for atomic rename may need to authenticate again.
+        let password = password.map(|value| Arc::new(Zeroizing::new(value)));
+        if password.as_ref().is_some_and(|value| {
+            value.is_empty()
+                || value.len() > 4096
+                || value.bytes().any(|b| matches!(b, b'\r' | b'\n' | 0))
+        }) {
+            return Err(AppError::new(
+                "SUDO_INVALID_PASSWORD",
+                "Enter a nonempty sudo password without line breaks",
+            ));
+        }
         let session = self.session(id).await?;
         const PATHS: [&str; 3] = [
             "/usr/lib/openssh/sftp-server",
@@ -953,14 +976,17 @@ impl SshManager {
             })?;
         let cancel = session.cancel.child_token();
         let initialized = timeout(Duration::from_secs(20), async {
-            let stream =
-                open_elevated_sftp_stream(&session, server_path, cancel.clone(), true).await?;
-            SftpSession::new(stream).await.map_err(|_| {
-                AppError::new(
-                    "SUDO_SFTP_DENIED",
-                    "The server did not allow non-interactive sudo SFTP. Password-based sudo is not supported yet.",
-                )
-            })
+            let stream = open_elevated_sftp_stream(
+                &session,
+                server_path,
+                cancel.clone(),
+                true,
+                password.as_deref().map(|value| value.as_str()),
+            )
+            .await?;
+            SftpSession::new(stream)
+                .await
+                .map_err(|_| sudo_auth_error(password.is_some()))
         })
         .await;
         let sftp = match initialized {
@@ -1002,6 +1028,7 @@ impl SshManager {
                     server_path,
                     cancel: cancel.clone(),
                     sftp,
+                    password,
                     closing: false,
                 },
             );
@@ -1125,6 +1152,7 @@ impl SshManager {
                 context.server_path,
                 context.cancel,
                 false,
+                context.password.as_deref().map(|value| value.as_str()),
             )
             .await?;
             return Ok(RawSftpSession::new(stream));
@@ -1259,13 +1287,41 @@ fn expand_home(path: &str) -> std::path::PathBuf {
     }
     path.into()
 }
-// Pump binary SFTP data without a PTY. Keep the channel write half so every
-// primary or atomic-rename channel can be closed on capability revocation.
+fn sudo_auth_error(password_supplied: bool) -> AppError {
+    if password_supplied {
+        AppError::new(
+            "SUDO_SFTP_AUTH_FAILED",
+            "sudo authentication failed or the server does not permit elevated SFTP",
+        )
+    } else {
+        AppError::new(
+            "SUDO_SFTP_DENIED",
+            "Passwordless sudo SFTP was not authorized",
+        )
+    }
+}
+
+// Keep only a bounded suffix of stderr to detect prompts split across SSH
+// packets. Never forward stderr, passwords or arbitrary shell output to SFTP.
+fn received_prompt(buffer: &mut Vec<u8>, data: &[u8], marker: &[u8]) -> bool {
+    buffer.extend_from_slice(data);
+    let found = buffer.windows(marker.len()).any(|part| part == marker);
+    let keep = marker.len().saturating_sub(1);
+    if buffer.len() > keep {
+        buffer.drain(..buffer.len() - keep);
+    }
+    found
+}
+
+// Pump binary SFTP data without a PTY. Passwords are sent once, on stdin,
+// only after the unique sudo prompt has actually arrived on stderr. A
+// repeated prompt ends the channel instead of supplying another credential.
 async fn open_elevated_sftp_stream(
     session: &SshSession,
     server_path: &'static str,
     cancel: CancellationToken,
     primary: bool,
+    password: Option<&str>,
 ) -> Result<tokio::io::DuplexStream> {
     let mut channel = timeout(
         Duration::from_secs(5),
@@ -1273,23 +1329,49 @@ async fn open_elevated_sftp_stream(
     )
     .await
     .map_err(|_| AppError::new("SUDO_SFTP_TIMEOUT", "Elevated SFTP channel timed out"))??;
+    let marker = password.map(|_| format!("__SHELL_EX_SUDO_{}__", Uuid::new_v4().simple()));
+    let command = match marker.as_ref() {
+        Some(marker) => format!("sudo -S -k -p {marker} -u root -- {server_path}"),
+        None => format!("sudo -n -u root -- {server_path}"),
+    };
     let setup = timeout(Duration::from_secs(8), async {
-        // server_path is selected exclusively from a fixed absolute allowlist.
-        channel
-            .exec(
-                true,
-                format!("sudo -n -u root -- {server_path}").into_bytes(),
-            )
-            .await?;
-        wait_success(&mut channel, "sudo SFTP command").await
-    })
-    .await;
-    if !matches!(setup, Ok(Ok(()))) || cancel.is_cancelled() {
+        // Both the server path and the generated prompt are shell-safe.
+        channel.exec(true, command.into_bytes()).await?;
+        wait_success(&mut channel, "sudo SFTP command").await?;
+        if let (Some(password), Some(marker)) = (password, marker.as_ref()) {
+            let mut stderr_tail = Vec::new();
+            loop {
+                match channel.wait().await {
+                    Some(ChannelMsg::ExtendedData { data, ext: 1 }) => {
+                        if received_prompt(&mut stderr_tail, &data, marker.as_bytes()) {
+                            let mut line = Zeroizing::new(password.as_bytes().to_vec());
+                            line.push(b'\n');
+                            channel.data(line.as_slice()).await?;
+                            break;
+                        }
+                    }
+                    // A server that starts the binary protocol, exits, or
+                    // never emits the expected prompt is not sent a password.
+                    Some(
+                        ChannelMsg::Data { .. }
+                        | ChannelMsg::Close
+                        | ChannelMsg::Eof
+                        | ChannelMsg::ExitStatus { .. },
+                    )
+                    | None => return Err(sudo_auth_error(true)),
+                    _ => {}
+                }
+            }
+        }
+        Ok::<_, AppError>(())
+    });
+    let setup = tokio::select! {
+        _ = cancel.cancelled() => None,
+        outcome = setup => Some(outcome),
+    };
+    if !matches!(setup, Some(Ok(Ok(())))) || cancel.is_cancelled() {
         let _ = timeout(Duration::from_secs(2), channel.close()).await;
-        return Err(AppError::new(
-            "SUDO_SFTP_DENIED",
-            "The server did not allow non-interactive sudo SFTP. Password-based sudo is not supported yet.",
-        ));
+        return Err(sudo_auth_error(password.is_some()));
     }
     let (mut reader, writer) = channel.split();
     let (local, bridge) = tokio::io::duplex(64 * 1024);
@@ -1304,6 +1386,7 @@ async fn open_elevated_sftp_stream(
             }
         };
         let receive = async {
+            let mut stderr_tail = Vec::new();
             while let Some(message) = reader.wait().await {
                 match message {
                     ChannelMsg::Data { data } => {
@@ -1311,8 +1394,14 @@ async fn open_elevated_sftp_stream(
                             break;
                         }
                     }
+                    ChannelMsg::ExtendedData { data, ext: 1 } => {
+                        if let Some(marker) = marker.as_ref() {
+                            if received_prompt(&mut stderr_tail, &data, marker.as_bytes()) {
+                                break;
+                            }
+                        }
+                    }
                     ChannelMsg::Close | ChannelMsg::Eof | ChannelMsg::ExitStatus { .. } => break,
-                    // stderr is not part of the binary SFTP protocol.
                     _ => {}
                 }
             }
@@ -1331,6 +1420,24 @@ async fn open_elevated_sftp_stream(
         let _ = timeout(Duration::from_secs(2), writer.close()).await;
     });
     Ok(local)
+}
+
+#[cfg(test)]
+mod sudo_prompt_tests {
+    use super::received_prompt;
+
+    #[test]
+    fn prompt_is_detected_across_stderr_frames() {
+        let marker = b"__FIXTURE_SUDO_PROMPT__";
+        let mut tail = Vec::new();
+        assert!(!received_prompt(&mut tail, b"notice: __FIXTURE_", marker));
+        assert!(received_prompt(&mut tail, b"SUDO_PROMPT__", marker));
+        assert!(tail.len() < marker.len());
+        tail.clear();
+        assert!(!received_prompt(&mut tail, b"Password: ", marker));
+        assert!(!received_prompt(&mut tail, &[b'x'; 65536], marker));
+        assert!(tail.len() < marker.len());
+    }
 }
 
 async fn wait_success(channel: &mut Channel<client::Msg>, what: &str) -> Result<()> {

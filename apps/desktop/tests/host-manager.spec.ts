@@ -14,7 +14,7 @@ test("manager opens independent sessions from one saved host and keeps the works
     let callback = 0, count = 0, fail = false;
     const closed: string[] = [], monitors: string[] = [], files: string[] = [];
     const revoked: string[] = [];
-    let elevated = 0;
+    let elevated = 0, requireSudoPassword = false;
     Object.defineProperty(window, "isTauri", { value: true });
     Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {
       metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } },
@@ -35,6 +35,8 @@ test("manager opens independent sessions from one saved host and keeps the works
           case "session_close": closed.push(args.sessionId); return null;
           case "plugin:dialog|message": return "确认";
           case "sftp_sudo_enable":
+            if (requireSudoPassword && !args.password) throw { code: "SUDO_SFTP_DENIED", message: "Passwordless sudo SFTP was not authorized" };
+            if (requireSudoPassword && args.password !== "fixture-password") throw { code: "SUDO_SFTP_AUTH_FAILED", message: "Fixture wrong password" };
             return "sudo-context-" + args.sessionId + "-" + ++elevated;
           case "sftp_sudo_disable":
             revoked.push(args.contextId); return null;
@@ -55,7 +57,8 @@ test("manager opens independent sessions from one saved host and keeps the works
       },
     }});
     Object.defineProperty(window, "__managerFixture", { value: { count: () => count, closed: () => closed,
-      fail: () => { fail = true; }, monitors: () => monitors, files: () => files, revoked: () => revoked } });
+      fail: () => { fail = true; }, monitors: () => monitors, files: () => files, revoked: () => revoked,
+      requirePassword: () => { requireSudoPassword = true; } } });
   });
   await page.setViewportSize({ width: 1600, height: 960 });
   await page.goto("/");
@@ -113,6 +116,28 @@ test("manager opens independent sessions from one saved host and keeps the works
   await expect(page.locator(".session-tab")).toHaveCount(1);
   expect(await page.evaluate(() => (window as any).__managerFixture.closed())).toEqual(["fixture-session-2"]);
   await expect(page.locator(".file-list tbody")).toContainText("fixture-session-1");
+  // Exercise password fallback, one wrong attempt, explicit cancellation,
+  // and a successful fresh authorization without changing the SSH tab.
+  await page.evaluate(() => (window as any).__managerFixture.requirePassword());
+  await sudo.click();
+  const sudoDialog = page.getByRole("dialog", { name: "sudo 密码授权" });
+  await expect(sudoDialog).toBeVisible();
+  await sudoDialog.locator('input[type="password"]').fill("wrong");
+  await sudoDialog.getByRole("button", { name: "授权", exact: true }).click();
+  await expect(sudoDialog).toContainText("Fixture wrong password");
+  await expect(sudoDialog.locator('input[type="password"]')).toHaveValue("");
+  await sudoDialog.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(sudoDialog).toHaveCount(0);
+  await expect(sudo).toHaveAttribute("aria-pressed", "false");
+  await sudo.click();
+  await expect(sudoDialog).toBeVisible();
+  await sudoDialog.locator('input[type="password"]').fill("fixture-password");
+  await sudoDialog.getByRole("button", { name: "授权", exact: true }).click();
+  await expect(sudoDialog).toHaveCount(0);
+  await expect(sudo).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".file-list tbody")).toContainText("sudo-context-fixture-session-1-3");
+  await sudo.click();
+  await expect(sudo).toHaveAttribute("aria-pressed", "false");
   await page.evaluate(() => (window as any).__managerFixture.fail());
   await open();
   await row.dblclick();

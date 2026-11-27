@@ -753,8 +753,15 @@ async fn session_close(state: State<'_, AppState>, session_id: String, local: bo
     state.session_owner(local).close(session_id).await
 }
 #[tauri::command]
-async fn sftp_sudo_enable(state: State<'_, AppState>, session_id: String) -> Result<String> {
-    state.ssh.sudo_files_enable(&session_id).await
+async fn sftp_sudo_enable(
+    state: State<'_, AppState>,
+    session_id: String,
+    password: Option<String>,
+) -> Result<String> {
+    state
+        .ssh
+        .sudo_files_enable_with_password(&session_id, password)
+        .await
 }
 #[tauri::command]
 async fn sftp_sudo_disable(

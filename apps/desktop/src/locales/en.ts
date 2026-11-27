@@ -818,10 +818,17 @@ export const en: Readonly<Record<string, string>> = {
   "已选择 {0} 项": "{0} selected",
   "删除选中的 {0} 个连接及其保存的凭据？": "Delete the {0} selected connections and their saved credentials?",
   "复制主机地址": "Copy host address",
-  "开启后，文件浏览器可使用 root 权限操作。新建文件可能属于 root；普通终端与其他会话不受影响。仅支持服务器已授权的免密 sudo，不修改服务器配置。": "The file browser will operate as root. New files may be owned by root. Other sessions and the terminal are unaffected. Only existing passwordless sudo authorization is supported; server configuration is not changed.",
+  "开启后，文件浏览器可使用 root 权限操作。新建文件可能属于 root；普通终端与其他会话不受影响。遵循服务器现有 sudo 授权，不修改服务器配置。": "The file browser will operate as root. New files may be owned by root. Other sessions and the terminal are unaffected. Existing server sudo policy is respected; server configuration is not changed.",
   "启用 sudo 文件模式": "Enable sudo file mode",
   "退出 sudo 文件模式": "Exit sudo file mode",
   "sudo 模式暂不支持文件传输，请退出 sudo 模式。": "Transfers are not yet available in sudo mode. Exit sudo mode to transfer files.",
   "root 文件模式 · 新建文件可能属于 root · 退出时取消未完成的 sudo 传输": "Root file mode · New files may be owned by root · Leaving cancels unfinished sudo transfers",
-  "使用 sudo 重试": "Retry with sudo"
+  "使用 sudo 重试": "Retry with sudo",
+  "sudo 密码授权": "sudo password authorization",
+  "免密 sudo 未获授权。如服务器允许密码授权，请输入当前 sudo 用户所需的密码。": "Passwordless sudo was not authorized. If the server permits password authentication, enter the password required by its sudo policy.",
+  "sudo 密码": "sudo password",
+  "仅用于本次文件授权，退出后释放，不保存到连接配置或密码库。": "Used only for this file authorization; released on exit and never stored in connection settings or the credential vault.",
+  "授权": "Authorize",
+  "sudo authentication failed or the server does not permit elevated SFTP": "sudo authentication failed or the server does not permit elevated SFTP",
+  "Enter a nonempty sudo password without line breaks": "Enter a nonempty sudo password without line breaks"
 };
