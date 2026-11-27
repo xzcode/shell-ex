@@ -81,7 +81,7 @@ export function SettingsDialog({
         .catch((e) =>
           setUpdate({
             configured: false,
-            version: "0.4.17",
+            version: "0.4.18",
             reason: errorText(e),
           }),
         );
@@ -172,7 +172,7 @@ export function SettingsDialog({
       footer={
         <>
           <span className="footer-note">
-            Shell EX · {update?.version || "0.4.17"}
+            Shell EX · {update?.version || "0.4.18"}
           </span>
           <button className="button secondary" onClick={onClose}>{tr("取消")}</button>
           <button
@@ -485,7 +485,7 @@ export function SettingsDialog({
               <div className="brand-mark large">›_</div>
               <h2>Shell EX</h2>
               <p>{tr("你的服务器，你的工作台。")}</p>
-              <span className="version">v{update?.version || "0.4.17"}</span>
+              <span className="version">v{update?.version || "0.4.18"}</span>
               <div className="settings-list">
                 <div>
                   <span>{tr("运行环境")}</span>
