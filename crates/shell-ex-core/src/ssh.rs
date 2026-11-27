@@ -1063,7 +1063,10 @@ impl SshManager {
             .collect()
     }
 
-    pub(crate) async fn file_transfer_context(&self, id: &str) -> Result<Option<CancellationToken>> {
+    pub(crate) async fn file_transfer_context(
+        &self,
+        id: &str,
+    ) -> Result<Option<CancellationToken>> {
         if let Some(context) = self.sudo_files.read().await.get(id) {
             if context.closing || context.cancel.is_cancelled() {
                 return Err(AppError::new("SESSION_CLOSED", "Elevated SFTP has ended"));

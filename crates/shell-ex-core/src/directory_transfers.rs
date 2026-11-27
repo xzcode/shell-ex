@@ -262,7 +262,10 @@ impl TransferManager {
             expires_seconds: PLAN_LIFETIME.as_secs(),
         };
         let _registration = self.inner.registration.lock().await;
-        self.inner.ssh.file_transfer_context(&summary.session_id).await?;
+        self.inner
+            .ssh
+            .file_transfer_context(&summary.session_id)
+            .await?;
         let mut plans = self.inner.plans.lock().await;
         plans.retain(|_, p| p.created.elapsed() < PLAN_LIFETIME);
         while plans.len() >= 8 {

@@ -554,7 +554,10 @@ async fn elevated_file_context_is_revocable_and_isolated() {
         .unwrap();
     let outcome = wait_for(&manager, &download.id, &["completed", "failed"]).await;
     assert_eq!(outcome.status, "completed", "{:?}", outcome.error);
-    assert_eq!(std::fs::read_to_string(&downloaded).unwrap(), "sudo upload\n");
+    assert_eq!(
+        std::fs::read_to_string(&downloaded).unwrap(),
+        "sudo upload\n"
+    );
     let folder = local.path().join("folder");
     std::fs::create_dir(&folder).unwrap();
     std::fs::write(folder.join("child.txt"), "child").unwrap();
@@ -573,6 +576,67 @@ async fn elevated_file_context_is_revocable_and_isolated() {
     let outcome = wait_for(&manager, &queued.transfer_ids[0], &["completed", "failed"]).await;
     assert_eq!(outcome.status, "completed", "{:?}", outcome.error);
     assert!(files.list(&first, &remote_folder).await.is_err());
+    let destination_folder = local.path().join("download-folder");
+    let plan = manager
+        .plan_directory(
+            elevated.clone(),
+            "download".into(),
+            destination_folder.to_str().unwrap().into(),
+            remote_folder.clone(),
+        )
+        .await
+        .unwrap();
+    let queued = manager.start_directory(&plan.id, "skip").await.unwrap();
+    assert_eq!(queued.queued, 1, "{:?}", queued.errors);
+    let outcome = wait_for(&manager, &queued.transfer_ids[0], &["completed", "failed"]).await;
+    assert_eq!(outcome.status, "completed", "{:?}", outcome.error);
+    assert_eq!(
+        std::fs::read_to_string(destination_folder.join("child.txt")).unwrap(),
+        "child"
+    );
+
+    // Force a paused upload with a real staging file, then revoke while paused.
+    let large_source = local.path().join("large.bin");
+    std::fs::write(&large_source, vec![37u8; 32 * 1024 * 1024]).unwrap();
+    let cancelled = manager
+        .start(
+            elevated.clone(),
+            "upload".into(),
+            large_source.to_str().unwrap().into(),
+            format!("{root}/cancelled.bin"),
+            false,
+        )
+        .await
+        .unwrap();
+    timeout(Duration::from_secs(60), async {
+        loop {
+            let record = manager
+                .list()
+                .await
+                .into_iter()
+                .find(|t| t.id == cancelled.id)
+                .unwrap();
+            if record.status == "running" && record.transferred > 0 {
+                break;
+            }
+            assert!(
+                !matches!(record.status.as_str(), "failed" | "completed"),
+                "unexpected early end: {record:?}"
+            );
+            sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    manager.control(&cancelled.id, "pause").await.unwrap();
+    wait_for(&manager, &cancelled.id, &["paused"]).await;
+    let partial_name = format!(".shell-ex-{}.part", cancelled.id);
+    assert!(files
+        .list(&elevated, &root)
+        .await
+        .unwrap()
+        .iter()
+        .any(|entry| entry.name == partial_name));
     let archive_error = manager
         .start_archive_download(
             elevated.clone(),
@@ -582,7 +646,10 @@ async fn elevated_file_context_is_revocable_and_isolated() {
         .await
         .unwrap_err();
     assert_eq!(archive_error.code, "SUDO_TRANSFER_UNAVAILABLE");
-    assert!(manager.revoke_sudo_context(&second, &elevated).await.is_err());
+    assert!(manager
+        .revoke_sudo_context(&second, &elevated)
+        .await
+        .is_err());
     let stale_plan = manager
         .plan_directory(
             elevated.clone(),
@@ -593,8 +660,17 @@ async fn elevated_file_context_is_revocable_and_isolated() {
         .await
         .unwrap();
     files.remove(&elevated, &path, false).await.unwrap();
-    manager.revoke_sudo_context(&first, &elevated).await.unwrap();
-    assert!(manager.start_directory(&stale_plan.id, "skip").await.is_err());
+    manager
+        .revoke_sudo_context(&first, &elevated)
+        .await
+        .unwrap();
+    let outcome = wait_for(&manager, &cancelled.id, &["cancelled"]).await;
+    assert!(outcome.error.is_none(), "{:?}", outcome.error);
+    assert!(manager.control(&cancelled.id, "resume").await.is_err());
+    assert!(manager
+        .start_directory(&stale_plan.id, "skip")
+        .await
+        .is_err());
     assert!(manager
         .start(
             elevated.clone(),
@@ -609,6 +685,12 @@ async fn elevated_file_context_is_revocable_and_isolated() {
     assert!(files.list(&first, &root).await.is_err());
 
     let second_elevated = ssh.sudo_files_enable(&second).await.unwrap();
+    assert!(!files
+        .list(&second_elevated, &root)
+        .await
+        .unwrap()
+        .iter()
+        .any(|entry| entry.name == partial_name || entry.name == "cancelled.bin"));
     ssh.disconnect(&first).await.unwrap();
     assert!(files.list(&second_elevated, &root).await.is_ok());
     ssh.disconnect(&second).await.unwrap();
