@@ -3336,3 +3336,8 @@ thead { background: var(--surface-table-head); }
 .host-manager-menu { position: fixed; right: auto; bottom: auto; z-index: 130; width: 220px; max-height: calc(100vh - 12px); overflow: auto; }
 .manager-column-option { display: flex; align-items: center; gap: 8px; padding: 7px; font-size: 11px; color: var(--secondary); }
 .manager-column-option:hover { background: var(--hover); }
+
+.theme-mini { grid-template-columns: 32% minmax(0, 1fr); }
+.theme-mini-monitor { grid-column: 1; grid-row: 2 / 4; }
+.theme-mini-terminal { grid-column: 2; grid-row: 2; }
+.theme-mini-files { grid-column: 2; grid-row: 3; }

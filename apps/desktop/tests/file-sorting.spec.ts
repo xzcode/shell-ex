@@ -104,7 +104,8 @@ test("file headers toggle sorting independently of resizing and preserve selecte
   await page.setViewportSize({ width: 1440, height: 920 });
   await page.goto("/");
   const host = page.locator(".host-item").filter({ hasText: "Sorting fixture" }).first();
-  await host.locator(".host-main").dblclick();
+  await page.getByRole("button", { name: "连接管理", exact: true }).click();
+  await host.locator(".manager-host-name").dblclick();
   const table = page.locator(".resizable-file-table");
   const rows = table.locator("tbody .file-name-content > span");
   const headers = table.locator(".resizable-file-heading");
@@ -177,7 +178,8 @@ test("file headers toggle sorting independently of resizing and preserve selecte
   await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), FILE_SORT_STORAGE_KEY))
     .toBe(JSON.stringify({ column: "name", direction: "desc" }));
   await page.reload();
-  await host.locator(".host-main").dblclick();
+  await page.getByRole("button", { name: "连接管理", exact: true }).click();
+  await host.locator(".manager-host-name").dblclick();
   await expect(headers.first()).toHaveAttribute("aria-sort", "descending");
   await expect(rows.first()).toHaveText("dir10");
 });

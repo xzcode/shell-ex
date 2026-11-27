@@ -48,7 +48,8 @@ test("terminal context menu supports clipboard, safe multiline paste, find, buff
   });
   await page.goto("/");
   const open = async () => {
-    await page.locator(".sidebar-bottom").getByRole("button", { name: /本地终端/ }).click();
+    await page.getByRole("button", { name: "连接管理", exact: true }).click();
+    await page.getByRole("dialog", { name: "连接管理" }).getByRole("button", { name: "本地终端", exact: true }).click();
     await expect(page.locator(".terminal-view.visible .xterm")).toBeVisible();
   };
   await open();

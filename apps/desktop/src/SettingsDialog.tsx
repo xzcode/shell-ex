@@ -239,7 +239,6 @@ export function SettingsDialog({
                   >
                     <div className="theme-mini" data-preview-theme={theme.id} aria-hidden="true">
                       <div className="theme-mini-title"><b /><b /><b /></div>
-                      <div className="theme-mini-sidebar"><i /><i /><i /><i /><i /></div>
                       <div className="theme-mini-terminal"><i /><i /><i /></div>
                       <div className="theme-mini-monitor"><i /><i /><i /></div>
                       <div className="theme-mini-files"><b /><i /><i /></div>

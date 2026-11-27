@@ -31,7 +31,7 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
 
   // These fixture addresses are documentation-only TEST-NET addresses. No remote API is mocked.
   await page.getByRole("button", { name: "新建会话", exact: true }).click();
-  await page.locator(".palette-results").getByRole("button", { name: /新建 SSH 连接/ }).click();
+  await page.getByRole("dialog", { name: "连接管理" }).getByRole("button", { name: "新建连接", exact: true }).click();
   const hostDialog = page.getByRole("dialog", {
     name: "新建 SSH 连接",
     exact: true,
@@ -71,8 +71,8 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
 
   const row = () =>
     page.locator(".host-item").filter({ hasText: "开发节点" }).first();
-  const hostName = row().locator(".host-main strong");
-  const hostAddress = row().locator(".host-main small");
+  const hostName = row().locator(".manager-host-name strong");
+  const hostAddress = row().getByText("192.0.2.10", { exact: true });
   await expect(hostName).toHaveCSS("user-select", "none");
   await expect(hostAddress).toHaveCSS("user-select", "none");
   await hostName.click({ button: "right" });
@@ -106,8 +106,8 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
     .click();
   await expect(
     page.locator(".host-item").filter({ hasText: "开发节点 · 主" }),
-  ).toHaveCount(2);
-  // A favorite is rendered twice, but its menu must open only once.
+  ).toHaveCount(1);
+  // Favorites are a filter, not a duplicate row.
   await row().getByRole("button", { name: "开发节点 · 主 更多操作" }).click();
   await expect(page.locator(".context-menu")).toHaveCount(1);
   await page
@@ -115,11 +115,11 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
     .getByRole("button", { name: "复制配置", exact: true })
     .click();
   await page
-    .getByRole("dialog")
+    .getByRole("dialog", { name: "编辑连接", exact: true })
     .getByLabel("连接名称", { exact: true })
     .fill("测试节点");
   await page
-    .getByRole("dialog")
+    .getByRole("dialog", { name: "编辑连接", exact: true })
     .getByRole("button", { name: "保存连接", exact: true })
     .click();
   await page.getByRole("textbox", { name: "筛选主机" }).fill("测试节点");
@@ -128,13 +128,14 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
   await page.getByRole("textbox", { name: "筛选主机" }).clear();
 
   // Preview never pretends to establish SSH sessions or operate the local computer.
-  await row().locator(".host-main").dblclick();
+  await row().locator(".manager-host-name").dblclick();
   await expect(
     page
       .locator(".toast")
       .filter({ hasText: "当前是界面预览，请使用桌面应用连接 SSH 服务器。" }),
   ).toBeVisible();
   await expect(page.getByText("0 个连接", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "隧道", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "新建转发", exact: true }),
@@ -148,10 +149,11 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
     return {
       dockedBelow: files.top >= upper.bottom - 2,
       fullWidth: Math.abs(files.width - upper.width) < 2,
-      monitorBesideTerminal: monitor.left >= terminal.right - 2,
+      monitorBesideTerminal: monitor.right <= terminal.left + 2,
+      monitorFullHeight: Math.abs(monitor.bottom - files.bottom) < 2,
     };
   });
-  expect(geometry).toEqual({ dockedBelow: true, fullWidth: true, monitorBesideTerminal: true });
+  expect(geometry).toEqual({ dockedBelow: true, fullWidth: true, monitorBesideTerminal: true, monitorFullHeight: true });
   await page.screenshot({
     path: info.outputPath("workbench-dark.png"),
     fullPage: true,
@@ -176,12 +178,14 @@ test("preview workbench preserves host workflows, secrets boundary, themes and c
   await expect(page.locator("html")).toHaveAttribute("data-theme", "aurora");
   await expect(page.locator(".terminal-area > .workspace-idle img")).toBeVisible();
   await expect(page.locator(".terminal-area > .terminal-slot")).toHaveCount(0);
-  // Copy preserves the favorite flag, so the restored host appears in both sections.
+  // Copy preserves the favorite flag, and each saved host is represented once.
+  await page.getByRole("button", { name: "连接管理", exact: true }).click();
   const restoredHost = page
     .locator(".host-item")
     .filter({ hasText: "测试节点" });
-  await expect(restoredHost).toHaveCount(2);
+  await expect(restoredHost).toHaveCount(1);
   await expect(restoredHost.first()).toBeVisible();
+  await page.keyboard.press("Escape");
 
   await page.setViewportSize({ width: 1024, height: 768 });
   await expect(page.locator(".titlebar")).toBeVisible();

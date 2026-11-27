@@ -206,7 +206,7 @@ export function HostManager(props: Props) {
             <tbody>
               {matching.map(host => <tr className={"host-item" + (selected.has(host.id) ? " selected" : "")} key={host.id} data-host-id={host.id}
                   onClick={e => selectRow(e, host.id)} onDoubleClick={() => connect([host])} onContextMenu={e => showHostMenu(e, host, true)}>
-                <td className="manager-check" onClick={e => e.stopPropagation()}>
+                <td className="manager-check" onClick={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
                   <input type="checkbox" checked={selected.has(host.id)} aria-label={tr("选择 {0}", host.name)}
                     onChange={() => { anchor.current = host.id; setSelected(old => { const next = new Set(old); if (next.has(host.id)) next.delete(host.id); else next.add(host.id); return next; }); }}/>
                 </td>

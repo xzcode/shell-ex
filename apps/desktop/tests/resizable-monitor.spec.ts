@@ -75,12 +75,13 @@ test("dock, directory tree and individual columns resize and persist", async ({ 
   await page.setViewportSize({ width: 1440, height: 920 });
   await page.goto("/");
   const first = page.locator(".host-item").filter({ hasText: "Fixture A" }).first();
-  await first.locator(".host-main").dblclick();
+  await page.getByRole("button", { name: "连接管理", exact: true }).click();
+  await first.locator(".manager-host-name").dblclick();
   await expect(page.locator(".file-list tbody")).toContainText("example.log");
-  const monitor = page.locator(".workspace-main > .monitor-panel");
+  const monitor = page.locator(".workspace-shell > .monitor-panel");
   const monitorHandle = page.getByRole("separator", { name: "调整监控面板宽度", exact: true });
   const monitorInitial = (await monitor.boundingBox())!.width;
-  await drag(page, monitorHandle, -90);
+  await drag(page, monitorHandle, 90);
   await expect.poll(async () => Math.round((await monitor.boundingBox())!.width)).toBe(Math.round(monitorInitial + 90));
   const tree = page.locator(".directory-tree");
   const treeInitial = (await tree.boundingBox())!.width;
@@ -103,21 +104,23 @@ test("dock, directory tree and individual columns resize and persist", async ({ 
   await expect.poll(async () => page.evaluate(() => {
     const w = JSON.parse(localStorage.getItem("fixture-workspace") || "{}");
     return [w.monitorWidth, w.fileTreeWidth, w.fileColumnWidths?.[0]];
-  })).toEqual([455, 270, Math.round(nameInitial + 100)]);
+  })).toEqual([monitorInitial + 90, 270, Math.round(nameInitial + 100)]);
 
   await monitor.getByRole("button", { name: "分离监控面板", exact: true }).click();
   await expect(monitor).toHaveCount(0);
   await expect(page.getByRole("button", { name: "停靠监控面板", exact: true })).toBeVisible();
   await expect.poll(async () => page.evaluate(() => (window as any).__fixtureMonitor.getContext()?.session?.name)).toBe("Fixture A");
-  await page.locator(".host-item").filter({ hasText: "Fixture B" }).first().locator(".host-main").dblclick();
+  await page.getByRole("button", { name: "连接管理", exact: true }).click();
+  await page.locator(".host-item").filter({ hasText: "Fixture B" }).first().locator(".manager-host-name").dblclick();
   await expect.poll(async () => page.evaluate(() => (window as any).__fixtureMonitor.getContext()?.session?.name)).toBe("Fixture B");
   await page.evaluate(() => (window as any).__fixtureMonitor.close());
   await expect(monitor).toBeVisible();
-  await expect.poll(async () => Math.round((await monitor.boundingBox())!.width)).toBe(455);
+  await expect.poll(async () => Math.round((await monitor.boundingBox())!.width)).toBe(Math.round(monitorInitial + 90));
   await page.reload();
   await expect(monitor).toBeVisible();
-  await expect.poll(async () => Math.round((await monitor.boundingBox())!.width)).toBe(455);
-  await first.locator(".host-main").dblclick();
+  await expect.poll(async () => Math.round((await monitor.boundingBox())!.width)).toBe(Math.round(monitorInitial + 90));
+  await page.getByRole("button", { name: "连接管理", exact: true }).click();
+  await first.locator(".manager-host-name").dblclick();
   await expect(page.locator(".file-list tbody")).toContainText("example.log");
   await expect.poll(async () => Math.round((await tree.boundingBox())!.width)).toBe(270);
   await expect.poll(async () => Math.round((await name.boundingBox())!.width)).toBe(Math.round(nameInitial + 100));

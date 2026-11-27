@@ -20,7 +20,6 @@ test("seven workspace themes have matching previews, differentiated regions, rea
   const names = ["black", "gray", "graphite", "aurora", "soft-white", "mist", "light"] as const;
   const regions = [
     [".titlebar", "--surface-title"],
-    [".sidebar", "--surface-sidebar"],
     [".session-bar", "--surface-tabs"],
     [".terminal-area", "--terminal"],
     [".bottom-panel", "--surface-files"],

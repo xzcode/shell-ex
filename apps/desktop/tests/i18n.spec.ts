@@ -9,7 +9,7 @@ test.describe("language preferences", () => {
     await expect(page.locator(".terminal-area > .workspace-idle img")).toBeVisible();
     await expect(page.locator(".terminal-area > .terminal-slot")).toHaveCount(0);
     await page.getByRole("button", { name: "New session", exact: true }).click();
-    await page.locator(".palette-results").getByRole("button", { name: /New SSH connection/ }).click();
+    await page.getByRole("dialog", { name: "Connection manager" }).getByRole("button", { name: "New connection", exact: true }).click();
     const connection = page.getByRole("dialog", { name: "New SSH connection" });
     await connection.getByLabel("Connection name", { exact: true }).fill("测试服务器");
     await connection.getByLabel("Host address", { exact: true }).fill("192.0.2.45");
@@ -18,13 +18,15 @@ test.describe("language preferences", () => {
     await connection.getByRole("button", { name: "Save connection" }).click();
     await expect(page.locator(".host-item").filter({ hasText: "测试服务器" })).toBeVisible();
 
+    await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Settings ⌘,", exact: true }).click();
     let settings = page.getByRole("dialog", { name: "Settings", exact: true });
     await expect(settings.getByLabel("Interface language")).toHaveValue("system");
     await settings.getByLabel("Interface language").selectOption("zh-CN");
     await settings.getByRole("button", { name: "Save settings" }).click();
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
-    await expect(page.getByText("我的分组", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "连接管理", exact: true }).click();
+    await expect(page.locator("[data-host-group]").filter({ hasText: "我的分组" })).toBeVisible();
     await expect(page.locator(".host-item").filter({ hasText: "测试服务器" })).toBeVisible();
 
     await page.reload();
@@ -35,6 +37,7 @@ test.describe("language preferences", () => {
     await settings.getByLabel("界面语言").selectOption("system");
     await settings.getByRole("button", { name: "保存设置", exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await page.getByRole("button", { name: "Connection manager", exact: true }).click();
     await expect(page.locator(".host-item").filter({ hasText: "测试服务器" })).toBeVisible();
   });
 
@@ -50,6 +53,7 @@ test.describe("language preferences", () => {
       }]));
     });
     await page.goto("/");
+    await page.getByRole("button", { name: "Connection manager", exact: true }).click();
     await page.getByRole("button", { name: "More actions for Legacy host" }).click();
     await page.locator(".context-menu").getByRole("button", { name: "Edit connection", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Edit connection" });
