@@ -39,7 +39,7 @@ struct Entry {
     is_dir: bool,
 }
 pub(super) struct PlanDetails {
-    summary: DirectoryPlan,
+    pub(super) summary: DirectoryPlan,
     entries: Vec<Entry>,
     created: Instant,
 }
@@ -52,7 +52,7 @@ impl TransferManager {
         local_root: String,
         remote_root: String,
     ) -> Result<DirectoryPlan> {
-        self.inner.ssh.require_transfer_session(&session_id).await?;
+        self.inner.ssh.file_transfer_context(&session_id).await?;
         if direction != "upload" && direction != "download" {
             return Err(AppError::new(
                 "INVALID_DIRECTION",
@@ -261,6 +261,8 @@ impl TransferManager {
             skipped_links,
             expires_seconds: PLAN_LIFETIME.as_secs(),
         };
+        let _registration = self.inner.registration.lock().await;
+        self.inner.ssh.file_transfer_context(&summary.session_id).await?;
         let mut plans = self.inner.plans.lock().await;
         plans.retain(|_, p| p.created.elapsed() < PLAN_LIFETIME);
         while plans.len() >= 8 {
@@ -330,6 +332,10 @@ impl TransferManager {
             ));
         }
         drop(tasks);
+        self.inner
+            .ssh
+            .file_transfer_context(&plan.summary.session_id)
+            .await?;
         let sftp = self.inner.ssh.sftp(&plan.summary.session_id).await?;
         // Revalidate the whole source before any destination directories are created.
         for entry in &plan.entries {

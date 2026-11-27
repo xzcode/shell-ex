@@ -822,6 +822,6 @@ export const en: Readonly<Record<string, string>> = {
   "启用 sudo 文件模式": "Enable sudo file mode",
   "退出 sudo 文件模式": "Exit sudo file mode",
   "sudo 模式暂不支持文件传输，请退出 sudo 模式。": "Transfers are not yet available in sudo mode. Exit sudo mode to transfer files.",
-  "root 文件模式 · 新建文件可能属于 root · 暂不支持文件传输": "Root file mode · New files may be owned by root · Transfers unavailable",
+  "root 文件模式 · 新建文件可能属于 root · 退出时取消未完成的 sudo 传输": "Root file mode · New files may be owned by root · Leaving cancels unfinished sudo transfers",
   "使用 sudo 重试": "Retry with sudo"
 };

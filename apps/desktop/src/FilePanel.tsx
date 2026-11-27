@@ -223,11 +223,6 @@ export function FilePanel({
       if (mounted.current) setSudoBusy(false);
     }
   }
-  function blockSudoTransfer() {
-    if (!elevated) return false;
-    notify(tr("sudo 模式暂不支持文件传输，请退出 sudo 模式。"), "info");
-    return true;
-  }
   const load = useCallback(async () => {
     if (!remote) return;
     const serial = ++request.current;
@@ -326,7 +321,7 @@ export function FilePanel({
     }
   }
   async function upload(paths?: string[]) {
-    if (!remote || blockSudoTransfer()) return;
+    if (!remote || sudoBusy) return;
     try {
       const result = paths || (await chooseFile({ multiple: true }));
       if (!result || sessionIdentity.current !== remote.id) return;
@@ -342,6 +337,7 @@ export function FilePanel({
           ))
         )
           continue;
+        if (sessionIdentity.current !== remote.id) return;
         await api("transfer_start", {
           sessionId: remote.id,
           direction: "upload",
@@ -395,9 +391,9 @@ export function FilePanel({
     if (!remote) return;
     setWorking(true);
     try {
-      if (blockSudoTransfer()) return;
+      if (sudoBusy) return;
       const selected = await chooseFile({ directory: true });
-      if (typeof selected !== "string") return;
+      if (typeof selected !== "string" || sessionIdentity.current !== remote.id) return;
       const rootName = (direction === "upload" ? selected : entry!.path)
         .replace(/[\\/]$/, "")
         .split(/[\\/]/)
@@ -428,7 +424,7 @@ export function FilePanel({
     }
   }
   async function startDirectory() {
-    if (!directoryPlan || blockSudoTransfer()) return;
+    if (!directoryPlan || sudoBusy) return;
     setWorking(true);
     try {
       const result = await api<{
@@ -464,7 +460,7 @@ export function FilePanel({
     }
   }
   async function download(entry: FileEntry) {
-    if (!remote || blockSudoTransfer()) return;
+    if (!remote || sudoBusy) return;
     if (entry.isDir) {
       await planDirectory("download", entry);
       return;
@@ -486,7 +482,7 @@ export function FilePanel({
     }
   }
   async function archiveDownload(targets: FileEntry[]) {
-    if (!remote || !targets.length || blockSudoTransfer()) return;
+    if (!remote || !targets.length || elevated || sudoBusy) return;
     setWorking(true);
     try {
       const name = targets.length === 1 ? targets[0].name + ".tar.gz" : "shell-ex-archive.tar.gz";
@@ -655,11 +651,11 @@ export function FilePanel({
           <Shield size={14} />{elevated ? "sudo · root" : "sudo"}
         </button>
         <span className="toolbar-separator" />
-        <button className="button subtle small" disabled={!!elevated} onClick={() => void upload()}>
+        <button className="button subtle small" disabled={sudoBusy} onClick={() => void upload()}>
           <Upload size={14} />{tr("上传")}</button>
         <IconButton
           title={tr("上传文件夹")}
-          disabled={working || !!elevated}
+          disabled={working || sudoBusy}
           onClick={() => void planDirectory("upload")}
         >
           <FolderUp size={15} />
@@ -675,7 +671,7 @@ export function FilePanel({
         </IconButton>
         <IconButton
           title={tr("下载选中的文件或目录")}
-          disabled={chosen.length !== 1 || working || !!elevated}
+          disabled={chosen.length !== 1 || working || sudoBusy}
           onClick={() => void download(chosen[0])}
         >
           <Download size={15} />
@@ -709,7 +705,7 @@ export function FilePanel({
           <Trash2 size={15} />
         </IconButton>
       </div>
-      {elevated && <div className="sudo-mode-note">{tr("root 文件模式 · 新建文件可能属于 root · 暂不支持文件传输")}</div>}
+      {elevated && <div className="sudo-mode-note">{tr("root 文件模式 · 新建文件可能属于 root · 退出时取消未完成的 sudo 传输")}</div>}
       {error && <div className="sudo-error-row">
         <ErrorBox message={error} retry={() => void load()} />
         {!elevated && /permission.?denied|access.?denied|权限/i.test(error) && (
@@ -896,7 +892,7 @@ export function FilePanel({
           {menu.section === "open" && canEdit && <div className="file-submenu">
             <button role="menuitem" onClick={() => runMenu(() => openEntry(single!, false))}>{tr("内置代码编辑器")}</button>
             <button role="menuitem" onClick={() => runMenu(() => openEntry(single!, true))}>{tr("纯文本编辑器")}</button>
-            <button role="menuitem" disabled={!!elevated} onClick={() => runMenu(() => void download(single!))}>{tr("下载本地副本")}</button>
+            <button role="menuitem" disabled={sudoBusy} onClick={() => runMenu(() => void download(single!))}>{tr("下载本地副本")}</button>
           </div>}
           <button role="menuitem" aria-expanded={menu.section === "editor"} onClick={() => setMenu({ ...menu, section: menu.section === "editor" ? null : "editor" })}>{tr("选择默认文本编辑器")}<ChevronRight size={13} /></button>
           {menu.section === "editor" && <div className="file-submenu">
@@ -906,9 +902,9 @@ export function FilePanel({
           <div className="menu-divider" role="separator" />
           <button role="menuitem" onClick={() => runMenu(() => void copyPaths(menuTargets))}>{tr("复制路径")}</button>
           <div className="menu-divider" role="separator" />
-          <button role="menuitem" disabled={!single || !!elevated} onClick={() => runMenu(() => void download(single!))}>{tr("下载")}</button>
-          <button role="menuitem" disabled={!!elevated} onClick={() => runMenu(() => void upload())}>{tr("上传…")}</button>
-          <button role="menuitem" disabled={!!elevated} onClick={() => runMenu(() => void planDirectory("upload"))}>{tr("上传文件夹")}</button>
+          <button role="menuitem" disabled={!single || sudoBusy} onClick={() => runMenu(() => void download(single!))}>{tr("下载")}</button>
+          <button role="menuitem" disabled={sudoBusy} onClick={() => runMenu(() => void upload())}>{tr("上传…")}</button>
+          <button role="menuitem" disabled={sudoBusy} onClick={() => runMenu(() => void planDirectory("upload"))}>{tr("上传文件夹")}</button>
           <div className="menu-divider" role="separator" />
           <button role="menuitem" disabled={!canPack} onClick={() => runMenu(() => void archiveDownload(menuTargets))}>{tr("打包传输 (.tar.gz)")}</button>
           <div className="menu-divider" role="separator" />

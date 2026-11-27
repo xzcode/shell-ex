@@ -80,6 +80,7 @@ export type RemoteFile = {
 export type Transfer = {
   id: string;
   sessionId: string;
+  elevated?: boolean;
   direction: "upload" | "download";
   localPath: string;
   remotePath: string;

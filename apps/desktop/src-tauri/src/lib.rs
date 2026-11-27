@@ -144,7 +144,7 @@ impl SessionOwner {
                 tunnels,
             } => {
                 if let Some(transfers) = transfers.upgrade() {
-                    transfers.cancel_session(&session_id).await;
+                    transfers.close_session_transfers(&session_id).await;
                 }
                 if let Some(monitor) = monitor.upgrade() {
                     monitor.forget_session(&session_id).await;
@@ -762,7 +762,10 @@ async fn sftp_sudo_disable(
     session_id: String,
     context_id: String,
 ) -> Result<()> {
-    state.ssh.sudo_files_disable(&session_id, &context_id).await
+    state
+        .transfers
+        .revoke_sudo_context(&session_id, &context_id)
+        .await
 }
 #[tauri::command]
 async fn sftp_realpath(

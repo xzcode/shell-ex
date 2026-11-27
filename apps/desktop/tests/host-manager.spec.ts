@@ -87,7 +87,7 @@ test("manager opens independent sessions from one saved host and keeps the works
   await sudo.click();
   await expect(sudo).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".file-list tbody")).toContainText("sudo-context-fixture-session-1-1");
-  await expect(page.locator(".file-panel").getByRole("button", { name: "上传", exact: true })).toBeDisabled();
+  await expect(page.locator(".file-panel").getByRole("button", { name: "上传", exact: true })).toBeEnabled();
   await expect.poll(() => page.evaluate(() => (window as any).__managerFixture.monitors().at(-1))).toBe("fixture-session-1");
   await sudo.click();
   await expect(sudo).toHaveAttribute("aria-pressed", "false");

@@ -43,6 +43,7 @@ pub use directory_transfers::{DirectoryPlan, DirectoryStartResult};
 pub struct Transfer {
     pub id: String,
     pub session_id: String,
+    pub elevated: bool,
     pub direction: String,
     pub local_path: String,
     pub remote_path: String,
@@ -80,6 +81,8 @@ struct Inner {
     ssh: Arc<SshManager>,
     tasks: Mutex<BTreeMap<String, Arc<Task>>>,
     plans: Mutex<BTreeMap<String, directory_transfers::PlanDetails>>,
+    registration: Mutex<()>,
+    revocation: Mutex<()>,
     concurrency: AtomicUsize,
     active: AtomicUsize,
     available: Notify,
@@ -104,6 +107,8 @@ impl TransferManager {
                 ssh,
                 tasks: Mutex::new(BTreeMap::new()),
                 plans: Mutex::new(BTreeMap::new()),
+                registration: Mutex::new(()),
+                revocation: Mutex::new(()),
                 concurrency: AtomicUsize::new(concurrency.clamp(1, 8)),
                 active: AtomicUsize::new(0),
                 available: Notify::new(),
@@ -157,7 +162,7 @@ impl TransferManager {
         overwrite: bool,
         archive_dir: Option<String>,
     ) -> Result<Transfer> {
-        self.inner.ssh.require_transfer_session(&session_id).await?;
+        self.inner.ssh.file_transfer_context(&session_id).await?;
         if direction != "upload" && direction != "download" {
             return Err(AppError::new(
                 "INVALID_DIRECTION",
@@ -210,6 +215,10 @@ impl TransferManager {
         if direction == "download" && local_metadata(&normalized_string).await?.is_some() {
             return Err(destination_exists());
         }
+        // Sealing and registering share this lock: a sealed context cannot
+        // admit a new privileged transfer.
+        let registration = self.inner.registration.lock().await;
+        let elevated = self.inner.ssh.file_transfer_context(&session_id).await?;
         let mut tasks = self.inner.tasks.lock().await;
         if tasks.len() >= MAX_TASKS {
             prune_completed_tasks(&mut tasks);
@@ -240,6 +249,7 @@ impl TransferManager {
         let record = Transfer {
             id: Uuid::new_v4().to_string(),
             session_id,
+            elevated: elevated.is_some(),
             direction,
             local_path: normalized_string,
             remote_path,
@@ -259,9 +269,23 @@ impl TransferManager {
         });
         tasks.insert(record.id.clone(), task.clone());
         drop(tasks);
+        drop(registration);
         let manager = self.clone();
         tokio::spawn(async move {
-            manager.worker(task, receiver).await;
+            if let Some(cancel) = elevated {
+                let worker = manager.worker(task.clone(), receiver);
+                tokio::pin!(worker);
+                tokio::select! {
+                    _ = &mut worker => {}
+                    _ = cancel.cancelled() => {
+                        task.control.send_replace(Control::Cancel);
+                        manager.inner.available.notify_waiters();
+                        worker.await;
+                    }
+                }
+            } else {
+                manager.worker(task, receiver).await;
+            }
         });
         Ok(record)
     }
@@ -422,6 +446,12 @@ impl TransferManager {
                 "This transfer cannot change state now",
             ));
         }
+        if *task.control.borrow() == Control::Cancel && action != "cancel" {
+            return Err(AppError::new(
+                "TRANSFER_FINISHED",
+                "A cancelled transfer cannot be resumed",
+            ));
+        }
         let (control, status) = match action {
             "pause" => (Control::Pause, "pausing"),
             "resume" => (Control::Run, "queued"),
@@ -442,6 +472,39 @@ impl TransferManager {
         self.inner.available.notify_waiters();
         Ok(())
     }
+    pub async fn revoke_sudo_context(&self, owner_id: &str, context_id: &str) -> Result<()> {
+        // Concurrent hide/switch/disconnect calls must not race channel cleanup.
+        let _revocation = self.inner.revocation.lock().await;
+        {
+            let _registration = self.inner.registration.lock().await;
+            if !self
+                .inner
+                .ssh
+                .seal_sudo_transfer_context(owner_id, context_id)
+                .await?
+            {
+                return Ok(());
+            }
+            self.inner
+                .plans
+                .lock()
+                .await
+                .retain(|_, plan| plan.summary.session_id != context_id);
+        }
+        self.cancel_session(context_id).await;
+        self.inner
+            .ssh
+            .sudo_files_disable(owner_id, context_id)
+            .await
+    }
+
+    pub async fn close_session_transfers(&self, session_id: &str) {
+        for id in self.inner.ssh.sudo_contexts_for_owner(session_id).await {
+            let _ = self.revoke_sudo_context(session_id, &id).await;
+        }
+        self.cancel_session(session_id).await;
+    }
+
     pub async fn cancel_session(&self, session_id: &str) {
         for record in self.list().await {
             if record.session_id == session_id
@@ -531,8 +594,22 @@ impl TransferManager {
                 Err(e) => {
                     // Preserve the partial for explicit, validated resume; failures do not
                     // loop or repeatedly consume bandwidth without user action.
-                    task.control.send_replace(Control::Pause);
-                    set_state(&task, "failed", Some(e.message)).await;
+                    let mut record = task.record.lock().await;
+                    if *task.control.borrow() != Control::Cancel {
+                        task.control.send_if_modified(|control| {
+                            if *control == Control::Cancel {
+                                false
+                            } else {
+                                *control = Control::Pause;
+                                true
+                            }
+                        });
+                        if *task.control.borrow() != Control::Cancel {
+                            record.status = "failed".into();
+                            record.speed = 0.0;
+                            record.error = Some(e.message);
+                        }
+                    }
                 }
             }
         }
@@ -1227,6 +1304,7 @@ mod tests {
         let mut record = Transfer {
             id: "fixture".into(),
             session_id: "fixture".into(),
+            elevated: false,
             direction: "download".into(),
             local_path: path.to_str().unwrap().into(),
             remote_path: "/tmp/fixture".into(),

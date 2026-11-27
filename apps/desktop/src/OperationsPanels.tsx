@@ -184,6 +184,7 @@ export function TransferPanel({ notify, columnWidths, onColumnWidth }: {
                         )}
                         <div>
                           <strong>
+                            {t.elevated && <span className="amber">[sudo] </span>}
                             {t.localPath
                               .split(/[\\/]/)
                               .pop()}

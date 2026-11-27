@@ -525,20 +525,86 @@ async fn elevated_file_context_is_revocable_and_isolated() {
     let entries = files.list(&elevated, &root).await.unwrap();
     assert_eq!(entries[0].uid, Some(0));
     let manager = TransferManager::new(ssh.clone(), 1);
-    let transfer_error = manager
+    let local = tempfile::tempdir_in(std::env::var("SHELL_EX_TEST_ROOT").unwrap()).unwrap();
+    let source = local.path().join("source.txt");
+    let downloaded = local.path().join("download.txt");
+    std::fs::write(&source, "sudo upload\n").unwrap();
+    let upload = manager
+        .start(
+            elevated.clone(),
+            "upload".into(),
+            source.to_str().unwrap().into(),
+            path.clone(),
+            true,
+        )
+        .await
+        .unwrap();
+    assert!(upload.elevated);
+    let outcome = wait_for(&manager, &upload.id, &["completed", "failed"]).await;
+    assert_eq!(outcome.status, "completed", "{:?}", outcome.error);
+    let download = manager
         .start(
             elevated.clone(),
             "download".into(),
-            format!("{root}/must-not-download"),
+            downloaded.to_str().unwrap().into(),
             path.clone(),
             false,
         )
         .await
+        .unwrap();
+    let outcome = wait_for(&manager, &download.id, &["completed", "failed"]).await;
+    assert_eq!(outcome.status, "completed", "{:?}", outcome.error);
+    assert_eq!(std::fs::read_to_string(&downloaded).unwrap(), "sudo upload\n");
+    let folder = local.path().join("folder");
+    std::fs::create_dir(&folder).unwrap();
+    std::fs::write(folder.join("child.txt"), "child").unwrap();
+    let remote_folder = format!("{root}/folder");
+    let plan = manager
+        .plan_directory(
+            elevated.clone(),
+            "upload".into(),
+            folder.to_str().unwrap().into(),
+            remote_folder.clone(),
+        )
+        .await
+        .unwrap();
+    let queued = manager.start_directory(&plan.id, "skip").await.unwrap();
+    assert_eq!(queued.queued, 1, "{:?}", queued.errors);
+    let outcome = wait_for(&manager, &queued.transfer_ids[0], &["completed", "failed"]).await;
+    assert_eq!(outcome.status, "completed", "{:?}", outcome.error);
+    assert!(files.list(&first, &remote_folder).await.is_err());
+    let archive_error = manager
+        .start_archive_download(
+            elevated.clone(),
+            vec![path.clone()],
+            local.path().join("archive.tar.gz").to_str().unwrap().into(),
+        )
+        .await
         .unwrap_err();
-    assert_eq!(transfer_error.code, "SUDO_TRANSFER_UNAVAILABLE");
-    assert!(ssh.sudo_files_disable(&second, &elevated).await.is_err());
+    assert_eq!(archive_error.code, "SUDO_TRANSFER_UNAVAILABLE");
+    assert!(manager.revoke_sudo_context(&second, &elevated).await.is_err());
+    let stale_plan = manager
+        .plan_directory(
+            elevated.clone(),
+            "upload".into(),
+            folder.to_str().unwrap().into(),
+            remote_folder.clone(),
+        )
+        .await
+        .unwrap();
     files.remove(&elevated, &path, false).await.unwrap();
-    ssh.sudo_files_disable(&first, &elevated).await.unwrap();
+    manager.revoke_sudo_context(&first, &elevated).await.unwrap();
+    assert!(manager.start_directory(&stale_plan.id, "skip").await.is_err());
+    assert!(manager
+        .start(
+            elevated.clone(),
+            "upload".into(),
+            source.to_str().unwrap().into(),
+            path.clone(),
+            false,
+        )
+        .await
+        .is_err());
     assert!(files.list(&elevated, &root).await.is_err());
     assert!(files.list(&first, &root).await.is_err());
 

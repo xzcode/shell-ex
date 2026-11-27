@@ -186,6 +186,7 @@ struct SudoFileContext {
     server_path: &'static str,
     cancel: CancellationToken,
     sftp: Arc<SftpSession>,
+    closing: bool,
 }
 
 struct AuthRequest {
@@ -1001,6 +1002,7 @@ impl SshManager {
                     server_path,
                     cancel: cancel.clone(),
                     sftp,
+                    closing: false,
                 },
             );
         }
@@ -1031,13 +1033,53 @@ impl SshManager {
         Ok(())
     }
 
-    // Transfers are not yet exposed to privileged capabilities. They may
-    // outlive a file panel, so revocation and cleanup need a separate design.
+    // Seal against new transfers while leaving the channel alive for cleanup.
+    pub(crate) async fn seal_sudo_transfer_context(
+        &self,
+        owner_id: &str,
+        context_id: &str,
+    ) -> Result<bool> {
+        let mut contexts = self.sudo_files.write().await;
+        let Some(context) = contexts.get_mut(context_id) else {
+            return Ok(false);
+        };
+        if context.owner_id != owner_id {
+            return Err(AppError::new(
+                "SUDO_SFTP_OWNER_MISMATCH",
+                "The elevated file context belongs to a different SSH session",
+            ));
+        }
+        context.closing = true;
+        Ok(true)
+    }
+
+    pub(crate) async fn sudo_contexts_for_owner(&self, owner_id: &str) -> Vec<String> {
+        self.sudo_files
+            .read()
+            .await
+            .iter()
+            .filter(|(_, context)| context.owner_id == owner_id)
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+
+    pub(crate) async fn file_transfer_context(&self, id: &str) -> Result<Option<CancellationToken>> {
+        if let Some(context) = self.sudo_files.read().await.get(id) {
+            if context.closing || context.cancel.is_cancelled() {
+                return Err(AppError::new("SESSION_CLOSED", "Elevated SFTP has ended"));
+            }
+            return Ok(Some(context.cancel.clone()));
+        }
+        self.session(id).await?;
+        Ok(None)
+    }
+
+    // Server-side archive generation executes shell commands, ordinary only.
     pub(crate) async fn require_transfer_session(&self, id: &str) -> Result<()> {
         if self.sudo_files.read().await.contains_key(id) {
             return Err(AppError::new(
                 "SUDO_TRANSFER_UNAVAILABLE",
-                "File transfers are not available in sudo mode",
+                "Server-side archive generation is not available in sudo mode",
             ));
         }
         self.session(id).await?;
