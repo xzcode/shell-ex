@@ -60,13 +60,33 @@ def password_sudo_fixture(root, env, elevated_sshd):
     finally:
         env.pop("SHELL_EX_TEST_PASSWORD_USER", None)
         env.pop("SHELL_EX_TEST_SUDO_PASSWORD", None)
-        if installed:
-            subprocess.run(["sudo", "-n", "rm", "-f", "--", rule], check=True)
-        if created:
-            subprocess.run(["sudo", "-n", "userdel", user], check=True)
-            subprocess.run(["sudo", "-n", "rm", "-rf", "--", str(home)], check=True)
-        staging.unlink(missing_ok=True)
-        os.chmod(root, 0o700)
+        try:
+            if installed:
+                subprocess.run(["sudo", "-n", "rm", "-f", "--", rule], check=True)
+            if created:
+                # A disconnected SSH service process may still be exiting.
+                # This randomly generated user exists exclusively on the
+                # disposable hosted runner. Never target the runner account.
+                for _ in range(30):
+                    result = subprocess.run(["sudo", "-n", "userdel", user],
+                                            capture_output=True, text=True)
+                    if result.returncode == 0:
+                        break
+                    if result.returncode != 8:
+                        result.check_returncode()
+                    time.sleep(0.1)
+                else:
+                    subprocess.run(["sudo", "-n", "pkill", "-TERM", "-u", user], check=False)
+                    time.sleep(0.5)
+                    subprocess.run(["sudo", "-n", "pkill", "-KILL", "-u", user], check=False)
+                    # A reparented zombie can keep the account busy even after
+                    # every live process has stopped; this account is disposable.
+                    subprocess.run(["sudo", "-n", "userdel", "-f", user], check=True)
+        finally:
+            if created:
+                subprocess.run(["sudo", "-n", "rm", "-rf", "--", str(home)], check=True)
+            staging.unlink(missing_ok=True)
+            os.chmod(root, 0o700)
 
 
 def main():
