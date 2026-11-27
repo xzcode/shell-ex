@@ -212,7 +212,7 @@ export const defaultWorkspace: Workspace = {
   activeHostId: null,
   sidebarWidth: 236,
   filesHeight: 326,
-  monitorWidth: 365,
+  monitorWidth: 320,
   fileTreeWidth: 210,
   fileColumnWidths: [280, 100, 92, 160, 132, 116],
   transferColumnWidths: [340, 220, 96, 104, 100],

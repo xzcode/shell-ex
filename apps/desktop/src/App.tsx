@@ -7,13 +7,9 @@ import {
   TerminalSquare,
   Search,
   Plus,
-  ChevronDown,
-  ChevronRight,
   Settings,
-  PanelLeftClose,
-  PanelLeftOpen,
   PanelBottom,
-  PanelRight,
+  PanelLeft,
   Columns2,
   Rows2,
   Maximize2,
@@ -24,11 +20,6 @@ import {
   Network,
   Container,
   ShieldCheck,
-  Star,
-  MoreHorizontal,
-  Pencil,
-  Copy,
-  Trash2,
   ArrowUpRight,
   CircleHelp,
   Command,
@@ -37,8 +28,6 @@ import {
   LoaderCircle,
   Monitor,
   LockKeyhole,
-  FolderOpen,
-  FolderPlus,
   RefreshCw,
 } from "lucide-react";
 import type {
@@ -62,6 +51,7 @@ import {
   receiveTerminalEvent,
 } from "./TerminalView";
 import { FilePanel } from "./FilePanel";
+import { HostManager, type HostManagerDataAction } from "./HostManager";
 import { ResizeHandle, clampWidth } from "./ResizeHandle";
 import {
   DockerPanel,
@@ -109,8 +99,7 @@ export default function App() {
   const locale = useLocale();
   const [hosts, setHosts] = useState<Host[]>([]);
   const [hostGroups, setHostGroups] = useState<string[]>([]);
-  const [groupMenu, setGroupMenu] = useState<string | null>(null);
-  const [groupDialog, setGroupDialog] = useState<{ mode: "create" | "rename" | "move"; name: string; value: string } | null>(null);
+  const [groupDialog, setGroupDialog] = useState<{ mode: "create" | "rename" | "move"; name: string; value: string; ids?: string[] } | null>(null);
   const [groupBusy, setGroupBusy] = useState(false);
   const [groupError, setGroupError] = useState("");
   const [newHostGroup, setNewHostGroup] = useState<string | undefined>();
@@ -131,18 +120,25 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [sidebar, setSidebar] = useState(true);
-  const [filter, setFilter] = useState("");
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [managerOpen, setManagerOpen] = useState(false);
+  const [lastConnected, setLastConnected] = useState<Record<string, number>>(() => {
+    try {
+      const raw: unknown = JSON.parse(localStorage.getItem("shell-ex-host-last-connected") || "{}");
+      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+        return Object.fromEntries(Object.entries(raw).filter(([, value]) => typeof value === "number" && Number.isFinite(value) && value > 0));
+      }
+    } catch { /* Optional local metadata. */ }
+    return {};
+  });
   const [hostDialog, setHostDialog] = useState<Host | null | undefined>(
     undefined,
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsDataAction, setSettingsDataAction] = useState<HostManagerDataAction | undefined>();
   const [monitorMode, setMonitorMode] = useState<"docked" | "opening" | "detached" | "docking">("docked");
   const [palette, setPalette] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
   const [panel, setPanel] = useState("files");
-  const [hostMenu, setHostMenu] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<Set<string>>(new Set());
   const [trust, setTrust] = useState<{
     host: Host;
@@ -170,7 +166,7 @@ export default function App() {
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const reconnecting = useRef(new Set<string>());
   const reconnectControllers = useRef(new Map<string, AbortController>());
-  const reconnectAttempts = useRef(new Map<string, number>());
+  const sessionSequence = useRef(new Map<string, number>());
   const active = sessions.find((s) => s.id === activeId) || null;
   const notify: Notify = useCallback((message, kind = "info") => {
     const id = Date.now() + Math.random();
@@ -251,11 +247,9 @@ export default function App() {
     setHosts(hosts);
     setHostGroups(Array.isArray(groups) ? groups : []);
   }, []);
-  function openGroupDialog(mode: "create" | "rename" | "move", name = "", value = "") {
-    setGroupMenu(null);
-    setHostMenu(null);
+  function openGroupDialog(mode: "create" | "rename" | "move", name = "", value = "", ids?: string[]) {
     setGroupError("");
-    setGroupDialog({ mode, name, value });
+    setGroupDialog({ mode, name, value, ids });
   }
   async function saveGroup() {
     if (!groupDialog || groupBusy) return;
@@ -265,25 +259,27 @@ export default function App() {
     setGroupBusy(true);
     setGroupError("");
     try {
-      await api("host_group_change", {
-        action: mode,
-        name: mode === "create" ? target : name,
-        newName: mode === "create" ? null : target,
-      });
+      if (mode === "move") {
+        for (const id of groupDialog.ids || [name])
+          await api("host_group_change", { action: mode, name: id, newName: target });
+      } else {
+        await api("host_group_change", {
+          action: mode,
+          name: mode === "create" ? target : name,
+          newName: mode === "create" ? null : target,
+        });
+      }
       await reloadHosts();
-      if (mode !== "move") setCollapsed((old) => {
-        const next = new Set(old);
-        next.delete(name);
-        next.delete(target);
-        return next;
-      });
       setGroupDialog(null);
       notify(tr("分组已保存。"), "success");
-    } catch (e) { setGroupError(errorText(e)); }
+    } catch (e) {
+      setGroupError(errorText(e));
+      // A batch may have partially succeeded. Refresh the real saved state.
+      await reloadHosts().catch(() => {});
+    }
     finally { setGroupBusy(false); }
   }
   async function deleteGroup(group: string) {
-    setGroupMenu(null);
     if (group === "默认分组" || groupBusy) return;
     if (!(await confirmAction(
       tr("删除分组“{0}”？其中的主机将移至默认分组，连接和密码不会删除。", group),
@@ -293,7 +289,6 @@ export default function App() {
     try {
       await api("host_group_change", { action: "delete", name: group, newName: null });
       await reloadHosts();
-      setCollapsed((old) => { const next = new Set(old); next.delete(group); return next; });
       notify(tr("分组已删除。"), "success");
     } catch (e) { notify(errorText(e), "error"); }
     finally { setGroupBusy(false); }
@@ -339,9 +334,8 @@ export default function App() {
   useEffect(() => {
     if (!ready) return;
     const timer = setTimeout(() => {
-      const hostIds = [
-        ...new Set(sessions.filter((s) => s.hostId).map((s) => s.hostId!)),
-      ];
+      // Keep repeated connection IDs: each entry is an independent remote tab.
+      const hostIds = sessions.filter((s) => s.hostId).map((s) => s.hostId!).slice(0, 100);
       const data = {
         ...workspace,
         hostIds: hostIds.length ? hostIds : restoreRef.current,
@@ -415,6 +409,7 @@ export default function App() {
     host: Host,
     automatic = false,
     signal?: AbortSignal,
+    replacesSessionId?: string,
   ): Promise<boolean> {
     let secret: SecretInput | null = null;
     let rememberSecret = false;
@@ -443,7 +438,6 @@ export default function App() {
     }
     connectionLock.current = true;
     setConnecting((s) => new Set(s).add(host.id));
-    setHostMenu(null);
     setPalette(false);
     try {
       if (
@@ -565,12 +559,16 @@ export default function App() {
         return false;
       }
       const pending = statusRef.current.get(id);
+      const source = replacesSessionId ? sessionRef.current.find(s => s.id === replacesSessionId) : undefined;
+      const sequence = (sessionSequence.current.get(host.id) || 0) + 1;
+      if (!source) sessionSequence.current.set(host.id, sequence);
+      const tabName = source?.name || (sequence === 1 ? host.name : `${host.name} (${sequence})`);
       setSessions((list) => [
         ...list,
         {
           id,
           hostId: host.id,
-          name: host.name,
+          name: tabName,
           local: false,
           status: pending?.status || "connected",
           error: pending?.error,
@@ -578,13 +576,14 @@ export default function App() {
         },
       ]);
       if (!automatic) await selectSession(id);
-      else if (
-        sessionRef.current.find((s) => s.id === activeRef.current)?.hostId ===
-        host.id
-      )
+      else if (replacesSessionId && activeRef.current === replacesSessionId)
         setActiveId(id);
       restoreRef.current = [];
-      reconnectAttempts.current.delete(host.id);
+      setLastConnected(previous => {
+        const next = { ...previous, [host.id]: Date.now() };
+        try { localStorage.setItem("shell-ex-host-last-connected", JSON.stringify(next)); } catch { /* Optional metadata. */ }
+        return next;
+      });
       notify(tr("已连接 {0}。", host.name), "success");
       if (credentialSaveFailed)
         notify(tr("连接成功，但密码未能保存。请编辑连接重新保存。"), "error");
@@ -653,6 +652,7 @@ export default function App() {
       ]);
       await selectSession(id);
       setPalette(false);
+      setManagerOpen(false);
     } catch (e) {
       notify(errorText(e), "error");
     }
@@ -701,8 +701,8 @@ export default function App() {
     }
     forgetTerminal(session.id);
     setSessions((s) => s.filter((item) => item.id !== session.id));
-    if (activeId === session.id) {
-      const others = sessions.filter((s) => s.id !== session.id);
+    if (activeRef.current === session.id) {
+      const others = sessionRef.current.filter((s) => s.id !== session.id);
       setActiveId(others.at(-1)?.id || null);
     }
     const timer = timers.current.get(session.id);
@@ -742,7 +742,7 @@ export default function App() {
             hasDirtyDrafts()
           )
             return;
-          const ok = await connectHost(host, true, controller.signal);
+          const ok = await connectHost(host, true, controller.signal, s.id);
           if (controller.signal.aborted) return;
           if (ok) {
             reconnectControllers.current.delete(s.id);
@@ -760,14 +760,12 @@ export default function App() {
     }
   }, [sessions, settings.autoReconnect]);
   useEffect(() => {
-    const closeHandler = () => { setHostMenu(null); setGroupMenu(null); };
-    document.addEventListener("click", closeHandler);
-    return () => document.removeEventListener("click", closeHandler);
-  }, []);
-  useEffect(() => {
     const keyHandler = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || document.querySelector(".modal")) return;
-      if (e.key.toLowerCase() === "k") {
+      if (e.key.toLowerCase() === "k" && e.shiftKey) {
+        e.preventDefault();
+        setManagerOpen(true);
+      } else if (e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPalette(true);
         setPaletteQuery("");
@@ -843,175 +841,58 @@ export default function App() {
       unlisten?.();
     };
   }, []);
-  async function deleteHost(host: Host) {
-    if (
-      sessions.some((s) => s.hostId === host.id && s.status === "connected")
-    ) {
+  async function deleteHosts(targets: Host[]) {
+    if (!targets.length) return;
+    const ids = new Set(targets.map(h => h.id));
+    if (targets.some(h => connecting.has(h.id)) || sessionRef.current.some(s => s.hostId && ids.has(s.hostId))) {
       notify(tr("请先关闭此主机的会话。"), "info");
       return;
     }
-    if (
-      !(await confirmAction(tr("删除“{0}”及其保存的凭据？", host.name), tr("删除连接")))
-    )
-      return;
+    const message = targets.length === 1
+      ? tr("删除“{0}”及其保存的凭据？", targets[0].name)
+      : tr("删除选中的 {0} 个连接及其保存的凭据？", targets.length);
+    if (!(await confirmAction(message, tr("删除连接")))) return;
     try {
-      await api("host_delete", { id: host.id });
+      for (const host of targets) await api("host_delete", { id: host.id });
+    } catch (e) { notify(errorText(e), "error"); }
+    finally { await reloadHosts().catch(e => notify(errorText(e), "error")); }
+  }
+  async function toggleFavorite(host: Host) {
+    try {
+      await api("host_save", { host: { ...host, favorite: !host.favorite }, rememberSecret: false });
       await reloadHosts();
-    } catch (e) {
-      notify(errorText(e), "error");
-    }
+    } catch (e) { notify(errorText(e), "error"); }
   }
   async function saveSettings(next: AppSettings) {
     const saved = await api<AppSettings>("settings_save", { settings: next });
     setSettings(saved);
     notify(tr("设置已保存。"), "success");
   }
-  function dragDimension(e: React.PointerEvent, kind: "sidebar" | "files") {
+  function dragDimension(e: React.PointerEvent) {
     e.preventDefault();
-    const startX = e.clientX,
-      startY = e.clientY;
-    const initial =
-      kind === "sidebar" ? workspace.sidebarWidth : workspace.filesHeight;
+    const startY = e.clientY, initial = workspace.filesHeight;
     const move = (event: PointerEvent) =>
-      setWorkspace((w) => ({
-        ...w,
-        ...(kind === "sidebar"
-          ? {
-              sidebarWidth: Math.max(
-                196,
-                Math.min(360, initial + event.clientX - startX),
-              ),
-            }
-          : {
-              filesHeight: Math.max(
-                180,
-                Math.min(
-                  window.innerHeight - 260,
-                  initial + startY - event.clientY,
-                ),
-              ),
-            }),
-      }));
+      setWorkspace(w => ({ ...w, filesHeight: Math.max(180, Math.min(window.innerHeight - 260, initial + startY - event.clientY)) }));
     const end = () => {
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", end);
+      document.removeEventListener("pointercancel", end);
+      window.removeEventListener("blur", end);
       document.body.style.cursor = "";
     };
-    document.body.style.cursor =
-      kind === "sidebar" ? "col-resize" : "row-resize";
+    document.body.style.cursor = "row-resize";
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerup", end);
+    document.addEventListener("pointercancel", end);
+    window.addEventListener("blur", end);
   }
-  const visibleHosts = hosts.filter((h) =>
-    `${h.name} ${h.address} ${h.username} ${h.group}`
-      .toLowerCase()
-      .includes(filter.toLowerCase()),
-  );
-  const allGroups = [...new Set([...hostGroups, ...hosts.map((h) => h.group || "默认分组")])];
-  const groups = allGroups.filter((group) => !filter.trim()
-    || group.toLowerCase().includes(filter.toLowerCase())
-    || visibleHosts.some((host) => (host.group || "默认分组") === group));
+  const allGroups = [...new Set([...hostGroups, ...hosts.map(h => h.group || "默认分组")])];
   const moveGroups = [...new Set(["默认分组", ...allGroups])];
   const secondary = sessions.filter((s) => s.id !== activeId).at(-1);
   const splitEnabled = workspace.split !== "none" && !!secondary;
   const remembered = restoreRef.current
     .map((id) => hosts.find((h) => h.id === id))
     .filter((h): h is Host => !!h);
-  const renderHost = (host: Host, slot: string) => {
-    const connected = sessions.some(
-      (s) => s.hostId === host.id && s.status === "connected",
-    );
-    const pending = connecting.has(host.id);
-    return (
-      <div
-        className={`host-item${active?.hostId === host.id ? " active" : ""}`}
-        key={host.id}
-        onClick={(e) => e.stopPropagation()}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setGroupMenu(null);
-          setHostMenu(slot + host.id);
-        }}
-        onDoubleClick={() => void connectHost(host)}
-      >
-        <button
-          className="host-main"
-          onClick={() => {
-            const open = sessions.find((s) => s.hostId === host.id);
-            if (open) void selectSession(open.id);
-          }}
-          title={tr("双击连接 {0}@{1}:{2}", host.username, host.address, host.port)}
-        >
-          <span className="host-icon" style={{ color: host.color }}>
-            <Server size={16} />
-            <i
-              className={connected ? "connected" : pending ? "connecting" : ""}
-            />
-          </span>
-          <span>
-            <strong>{host.name}</strong>
-            <small>{host.address}</small>
-          </span>
-          {host.favorite && <Star className="favorite" size={11} />}
-        </button>
-        <IconButton
-          title={tr("{0} 更多操作", host.name)}
-          onClick={() => {
-            setGroupMenu(null);
-            setHostMenu(hostMenu === slot + host.id ? null : slot + host.id);
-          }}
-        >
-          <MoreHorizontal size={15} />
-        </IconButton>
-        {hostMenu === slot + host.id && (
-          <div className="context-menu" onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => void connectHost(host)}>
-              <TerminalSquare size={14} />{tr("连接服务器")}</button>
-            <button
-              onClick={() => {
-                setHostDialog(host);
-                setHostMenu(null);
-              }}
-            >
-              <Pencil size={14} />{tr("编辑连接")}</button>
-            <button onClick={() => openGroupDialog("move", host.id, host.group || "默认分组")}>
-              <FolderOpen size={14} />{tr("移动到分组")}</button>
-            <button
-              onClick={() => {
-                setHostDialog({
-                  ...host,
-                  id: crypto.randomUUID(),
-                  name: tr("{0} 副本", host.name),
-                });
-                setHostMenu(null);
-              }}
-            >
-              <Copy size={14} />{tr("复制配置")}</button>
-            <button
-              onClick={async () => {
-                try {
-                  await api("host_save", {
-                    host: { ...host, favorite: !host.favorite },
-                    rememberSecret: false,
-                  });
-                  await reloadHosts();
-                  setHostMenu(null);
-                } catch (e) {
-                  notify(errorText(e), "error");
-                }
-              }}
-            >
-              <Star size={14} />
-              {host.favorite ? tr("取消收藏") : tr("加入收藏")}
-            </button>
-            <button className="red" onClick={() => void deleteHost(host)}>
-              <Trash2 size={14} />{tr("删除连接")}</button>
-          </div>
-        )}
-      </div>
-    );
-  };
   return (
     <div className="app-shell">
       <header
@@ -1021,8 +902,11 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark">›_</span>
           <strong>Shell EX</strong>
-          <span className="version-tag">0.4.14</span>
+          <span className="version-tag">0.4.16</span>
         </div>
+        <button className="button secondary small manage-hosts-button" onClick={() => setManagerOpen(true)}>
+          <Server size={15} />{tr("连接管理")}
+        </button>
         {macTitlebar && <div className="titlebar-drag" data-tauri-drag-region="" aria-hidden="true" />}
         <div className="header-actions">
           <IconButton
@@ -1046,181 +930,25 @@ export default function App() {
           </IconButton>
         </div>
       </header>
-      <div className="workspace-shell">
-        {sidebar && (
+      <div className="workspace-shell" ref={mainArea}>
+        {workspace.monitorVisible && monitorMode === "docked" && (
           <>
-            <aside
-              className="sidebar"
-              style={{ width: workspace.sidebarWidth }}
-            >
-              <header className="sidebar-heading">
-                <strong>{tr("连接")}</strong>
-                <span>{hosts.length}</span>
-                <div className="flex-spacer" />
-                <IconButton title={tr("新建分组")} disabled={groupBusy || !ready} onClick={() => openGroupDialog("create")}>
-                  <FolderPlus size={16} />
-                </IconButton>
-                <IconButton
-                  title={tr("新建连接 ⌘⇧N")}
-                  onClick={() => setHostDialog(null)}
-                >
-                  <Plus size={17} />
-                </IconButton>
-              </header>
-              <div className="host-search">
-                <Search size={13} />
-                <input
-                  placeholder={tr("筛选主机…")}
-                  aria-label={tr("筛选主机")}
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                />
-                {filter && (
-                  <button onClick={() => setFilter("")}>
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
-              <div className="host-groups scroll-area">
-                {hosts.some((h) => h.favorite) && !filter && (
-                  <section className="host-group">
-                    <button
-                      className="group-heading"
-                      onClick={() =>
-                        setCollapsed((c) => {
-                          const n = new Set(c);
-                          if (n.has("__favorites")) n.delete("__favorites");
-                          else n.add("__favorites");
-                          return n;
-                        })
-                      }
-                    >
-                      {collapsed.has("__favorites") ? (
-                        <ChevronRight size={12} />
-                      ) : (
-                        <ChevronDown size={12} />
-                      )}
-                      <Star size={12} />
-                      <span>{tr("收藏")}</span>
-                    </button>
-                    {!collapsed.has("__favorites") &&
-                      hosts
-                        .filter((h) => h.favorite)
-                        .map((h) => renderHost(h, "favorite"))}
-                  </section>
-                )}
-                {groups.map((group) => (
-                  <section className="host-group" key={group} data-host-group={group}>
-                    <div className="group-heading-row" onClick={(e) => e.stopPropagation()}
-                      onContextMenu={(e) => {
-                        e.preventDefault(); e.stopPropagation();
-                        setHostMenu(null); setGroupMenu(group);
-                      }}>
-                    <button
-                      className="group-heading"
-                      aria-expanded={!collapsed.has(group)}
-                      onClick={() =>
-                        setCollapsed((c) => {
-                          const n = new Set(c);
-                          if (n.has(group)) n.delete(group);
-                          else n.add(group);
-                          return n;
-                        })
-                      }
-                    >
-                      {collapsed.has(group) ? (
-                        <ChevronRight size={12} />
-                      ) : (
-                        <ChevronDown size={12} />
-                      )}
-                      <FolderOpen size={12} />
-                      <span>{group === "默认分组" ? tr("默认分组") : group}</span>
-                      <small>
-                        {
-                          visibleHosts.filter(
-                            (h) => (h.group || "默认分组") === group,
-                          ).length
-                        }
-                      </small>
-                    </button>
-                    <IconButton title={tr("{0} 分组操作", group)} disabled={groupBusy}
-                      onClick={() => { setHostMenu(null); setGroupMenu(groupMenu === group ? null : group); }}>
-                      <MoreHorizontal size={14} />
-                    </IconButton>
-                    {groupMenu === group && (
-                      <div className="context-menu group-context-menu" onClick={(e) => e.stopPropagation()}>
-                        <button onClick={() => { setGroupMenu(null); setNewHostGroup(group); setHostDialog(null); }}>
-                          <Plus size={14} />{tr("在此分组新建连接")}</button>
-                        {group !== "默认分组" && <>
-                          <button onClick={() => openGroupDialog("rename", group, group)}>
-                            <Pencil size={14} />{tr("重命名分组")}</button>
-                          <button className="red" onClick={() => void deleteGroup(group)}>
-                            <Trash2 size={14} />{tr("删除分组")}</button>
-                        </>}
-                      </div>
-                    )}
-                    </div>
-                    {!collapsed.has(group) &&
-                      visibleHosts
-                        .filter((h) => (h.group || "默认分组") === group)
-                        .map((h) => renderHost(h, "group"))}
-                  </section>
-                ))}
-                {!hosts.length && !groups.length && (
-                  <div className="sidebar-empty">
-                    <Server size={26} />
-                    <strong>{tr("还没有连接")}</strong>
-                    <p>{tr("添加你的第一台服务器")}<br />{tr("开始管理远程工作。")}</p>
-                    <button
-                      className="button secondary small"
-                      onClick={() => setHostDialog(null)}
-                    >
-                      <Plus size={13} />{tr("添加连接")}</button>
-                  </div>
-                )}
-                {!!filter && !groups.length && !visibleHosts.length && (
-                  <p className="sidebar-no-results">{tr("没有匹配的主机")}</p>
-                )}
-              </div>
-              <div className="sidebar-bottom">
-                <button onClick={() => void openLocal()}>
-                  <TerminalSquare size={16} />
-                  <span>{tr("本地终端")}</span>
-                  <kbd>⌘⇧L</kbd>
-                </button>
-                <button onClick={() => setLinuxHelp(true)}>
-                  <Code2 size={16} />
-                  <span>{tr("Linux 命令帮助")}</span>
-                  <ArrowUpRight size={13} />
-                </button>
-                <button onClick={() => setHelp(true)}>
-                  <CircleHelp size={16} />
-                  <span>{tr("使用指南")}</span>
-                  <ArrowUpRight size={13} />
-                </button>
-              </div>
-            </aside>
-            <div
-              className="resize-handle vertical"
-              onPointerDown={(e) => dragDimension(e, "sidebar")}
-              role="separator"
-              aria-label={tr("调整侧边栏宽度")}
-              aria-orientation="vertical"
+            <MonitorPanel
+              width={actualMonitorWidth}
+              onDetach={native ? () => void detachMonitor() : undefined}
+              session={active}
+              settings={settings}
+              notify={notify}
+              onClose={() => setWorkspace(w => ({ ...w, monitorVisible: false }))}
             />
+            <ResizeHandle label={tr("调整监控面板宽度")} value={actualMonitorWidth}
+              min={240} max={maxMonitorWidth}
+              onChange={width => setWorkspace(w => ({ ...w, monitorWidth: width }))}
+              onReset={() => setWorkspace(w => ({ ...w, monitorWidth: defaultWorkspace.monitorWidth }))} />
           </>
         )}
         <main className="workbench">
           <div className="session-bar">
-            <IconButton
-              title={sidebar ? tr("收起主机列表") : tr("显示主机列表")}
-              onClick={() => setSidebar((v) => !v)}
-            >
-              {sidebar ? (
-                <PanelLeftClose size={15} />
-              ) : (
-                <PanelLeftOpen size={15} />
-              )}
-            </IconButton>
             <div className="session-tabs">
               {!sessions.length ? (
                 <div className="session-tab selected welcome-tab">
@@ -1250,10 +978,7 @@ export default function App() {
             </div>
             <IconButton
               title={tr("新建会话")}
-              onClick={() => {
-                setPalette(true);
-                setPaletteQuery("");
-              }}
+              onClick={() => setManagerOpen(true)}
             >
               <Plus size={16} />
             </IconButton>
@@ -1295,7 +1020,6 @@ export default function App() {
                   ))
                 )
                   return;
-                setSidebar(false);
                 setWorkspace((w) => ({
                   ...w,
                   filesVisible: false,
@@ -1306,7 +1030,7 @@ export default function App() {
               <Maximize2 size={14} />
             </IconButton>
           </div>
-          <div className="workspace-main" ref={mainArea}>
+          <div className="workspace-main">
             <section className="terminal-column">
               {bootError && <ErrorBox message={bootError} />}
               <div
@@ -1363,30 +1087,12 @@ export default function App() {
                 )}
               </div>
             </section>
-            {workspace.monitorVisible && monitorMode === "docked" && (
-              <>
-              <ResizeHandle label={tr("调整监控面板宽度")} value={actualMonitorWidth}
-                min={240} max={maxMonitorWidth} direction={-1}
-                onChange={(width) => setWorkspace((w) => ({ ...w, monitorWidth: width }))}
-                onReset={() => setWorkspace((w) => ({ ...w, monitorWidth: defaultWorkspace.monitorWidth }))} />
-              <MonitorPanel
-                width={actualMonitorWidth}
-                onDetach={native ? () => void detachMonitor() : undefined}
-                session={active}
-                settings={settings}
-                notify={notify}
-                onClose={() =>
-                  setWorkspace((w) => ({ ...w, monitorVisible: false }))
-                }
-              />
-              </>
-            )}
           </div>
               {workspace.filesVisible && (
                 <>
                   <div
                     className="resize-handle horizontal"
-                    onPointerDown={(e) => dragDimension(e, "files")}
+                    onPointerDown={dragDimension}
                     role="separator"
                     aria-label={tr("调整文件面板高度")}
                     aria-orientation="horizontal"
@@ -1522,10 +1228,36 @@ export default function App() {
               else setWorkspace((w) => ({ ...w, monitorVisible: !w.monitorVisible }));
             }}
           >
-            <PanelRight size={13} />
+            <PanelLeft size={13} />
           </IconButton>
         </div>
       </footer>
+      {managerOpen && (
+        <HostManager
+          hosts={hosts} groups={moveGroups} lastConnected={lastConnected}
+          disabled={!ready || groupBusy} connecting={connecting.size > 0}
+          notify={notify}
+          onClose={() => setManagerOpen(false)}
+          onConnect={async targets => {
+            for (const host of targets) if (!(await connectHost(host))) return false;
+            setManagerOpen(false);
+            return true;
+          }}
+          onCreate={group => { setNewHostGroup(group); setHostDialog(null); }}
+          onEdit={host => setHostDialog(host)}
+          onCopy={host => setHostDialog({ ...host, id: crypto.randomUUID(), name: tr("{0} 副本", host.name) })}
+          onFavorite={toggleFavorite}
+          onDelete={deleteHosts}
+          onGroupCreate={() => openGroupDialog("create")}
+          onGroupRename={group => openGroupDialog("rename", group, group)}
+          onGroupDelete={deleteGroup}
+          onMove={targets => openGroupDialog("move", targets[0].id, targets[0].group || "默认分组", targets.map(h => h.id))}
+          onData={action => { setSettingsDataAction(action); setSettingsOpen(true); }}
+          onLocal={() => void openLocal()}
+          onHelp={() => setHelp(true)}
+          onLinuxHelp={() => setLinuxHelp(true)}
+        />
+      )}
       {groupDialog && (
         <Modal
           title={tr(groupDialog.mode === "create" ? "新建分组" : groupDialog.mode === "rename" ? "重命名分组" : "移动到分组")}
@@ -1568,6 +1300,7 @@ export default function App() {
           onSaved={() => {
             setHostDialog(undefined);
             setNewHostGroup(undefined);
+            setManagerOpen(true);
             void reloadHosts();
             notify(tr("连接已保存。"), "success");
           }}
@@ -1577,7 +1310,8 @@ export default function App() {
         <SettingsDialog
           settings={settings}
           hosts={hosts}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => { setSettingsOpen(false); setSettingsDataAction(undefined); }}
+          initialDataAction={settingsDataAction}
           onSave={saveSettings}
           notify={notify}
           onHostsChanged={() => void reloadHosts()}
@@ -1652,7 +1386,7 @@ export default function App() {
                 disabled={connecting.size > 0}
                 onClick={async () => {
                   setPalette(false);
-                  for (const h of remembered) await connectHost(h);
+                  for (const h of remembered) if (!(await connectHost(h))) break;
                   restoreRef.current = [];
                 }}
               >

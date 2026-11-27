@@ -1,5 +1,5 @@
 import { tr } from "./i18n";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { X, LoaderCircle, AlertCircle, Inbox } from "lucide-react";
 export function IconButton({
   title,
@@ -37,6 +37,7 @@ export function Modal({
   wide = false,
   className = "",
   footer,
+  sizePreference,
 }: {
   title: string;
   subtitle?: string;
@@ -45,8 +46,31 @@ export function Modal({
   wide?: boolean;
   className?: string;
   footer?: ReactNode;
+  sizePreference?: { key: string; width: number; height: number };
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [sizeStyle] = useState<CSSProperties | undefined>(() => {
+    if (!sizePreference) return undefined;
+    let width = sizePreference.width, height = sizePreference.height;
+    try {
+      const raw = JSON.parse(localStorage.getItem(sizePreference.key) || "{}");
+      if (Number.isFinite(raw.width)) width = Math.max(700, Math.min(2400, raw.width));
+      if (Number.isFinite(raw.height)) height = Math.max(380, Math.min(1600, raw.height));
+    } catch { /* Default size. */ }
+    return { width, height };
+  });
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || !sizePreference) return;
+    const observer = new ResizeObserver(() => {
+      // CSS resize updates inline dimensions; viewport constraints do not.
+      const width = parseFloat(element.style.width), height = parseFloat(element.style.height);
+      if (!Number.isFinite(width) || !Number.isFinite(height)) return;
+      try { localStorage.setItem(sizePreference.key, JSON.stringify({ width, height })); } catch { /* Session only. */ }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [sizePreference?.key]);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   useEffect(() => {
@@ -106,6 +130,7 @@ export function Modal({
       <div
         ref={ref}
         className={`modal${wide ? " wide" : ""}${className ? " " + className : ""}`}
+        style={sizeStyle}
         role="dialog"
         aria-modal="true"
         aria-label={title}

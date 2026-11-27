@@ -3286,3 +3286,53 @@ thead { background: var(--surface-table-head); }
 .monitor-sort-button > svg { flex-shrink: 0; opacity: .6; }
 .monitor-sort-button.active { color: var(--text); font-weight: 600; }
 .monitor-sort-button.active > svg { opacity: 1; color: var(--accent); }
+
+/* V2: the monitor occupies the full left edge, while the workbench keeps its
+   terminal and file/tools panels in one right-hand column. */
+.workspace-shell > .monitor-panel { flex-shrink: 0; min-width: 0; max-width: calc(100% - 245px); border-left: 0; border-right: 1px solid var(--border); }
+.workspace-shell > .resize-handle { flex-shrink: 0; }
+.manage-hosts-button { flex-shrink: 0; white-space: nowrap; }
+.titlebar.mac-titlebar .manage-hosts-button { -webkit-app-region: no-drag; }
+.modal.host-manager-modal { resize: both; min-width: min(700px, calc(100vw - 56px)); min-height: min(380px, calc(100vh - 56px)); max-width: calc(100vw - 56px); max-height: calc(100vh - 56px); }
+.host-manager-modal > .modal-header { padding: 12px 17px; align-items: center; }
+.host-manager-modal > .modal-content { padding: 0; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.host-manager-modal > .modal-footer { padding: 9px 15px; }
+.host-manager-toolbar { display: flex; gap: 6px; padding: 8px 10px; align-items: center; flex-wrap: wrap; flex-shrink: 0; border-bottom: 1px solid var(--border); background: var(--surface-tools); }
+.host-manager-toolbar .button, .host-manager-batch .button { height: 28px; white-space: nowrap; }
+.host-manager-search { height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 7px; border: 1px solid var(--border); background: var(--bg); border-radius: 3px; color: var(--muted); flex: 0 1 190px; }
+.host-manager-search input { width: 100%; min-width: 60px; background: transparent; border: 0; outline: none; font-size: 11px; color: var(--text); }
+.host-manager-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.host-manager-groups { flex: 0 0 158px; min-width: 0; overflow: auto; padding: 8px 5px; background: var(--surface-sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
+.host-manager-groups > button, .host-manager-group > button:first-child, .host-manager-utilities > button { display: flex; align-items: center; min-width: 0; gap: 6px; padding: 7px; border-radius: 3px; text-align: left; color: var(--secondary); font-size: 11px; }
+.host-manager-groups > button.active, .host-manager-group.active { background: var(--selected); color: var(--text); }
+.host-manager-groups button:hover { background: var(--hover); }
+.host-manager-groups button span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.host-manager-groups button small { color: var(--muted); font-size: 10px; }
+.host-manager-groups h3 { color: var(--muted); font-size: 10px; font-weight: 500; padding: 12px 7px 4px; }
+.host-manager-group { display: flex; align-items: center; border-radius: 3px; }
+.host-manager-group > button:first-child { flex: 1; }
+.host-manager-group .group-more { width: 22px; height: 24px; flex-shrink: 0; }
+.host-manager-utilities { border-top: 1px solid var(--border); padding-top: 5px; }
+.host-manager-utilities > button { width: 100%; }
+.host-manager-main { min-width: 0; flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--surface-files); }
+.host-manager-batch { display: flex; align-items: center; gap: 6px; padding: 6px 9px; flex-shrink: 0; border-bottom: 1px solid var(--border); background: var(--surface-tools); color: var(--secondary); font-size: 11px; }
+.host-manager-list { flex: 1; min-width: 0; min-height: 0; overflow: auto; }
+.host-manager-table { width: 100%; min-width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+.host-manager-table th, .host-manager-table td { padding: 0 9px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; font-size: 11px; height: 32px; }
+.host-manager-table th { padding: 0; font-size: 10px; height: 30px; }
+.host-manager-table .file-heading-content { padding: 0 13px 0 0; }
+.host-manager-table .host-item { display: table-row; margin: 0; border-radius: 0; min-height: 0; cursor: default; user-select: none; }
+.host-manager-table .host-item:nth-child(even) { background: var(--surface-row-alt); }
+.host-manager-table .host-item:hover { background: var(--hover); }
+.host-manager-table .host-item.selected { background: var(--selected); }
+.host-manager-table .manager-check, .host-manager-table .manager-actions { padding: 0; text-align: center; }
+.manager-check input { width: 13px; height: 13px; vertical-align: middle; }
+.manager-actions .icon-button { display: inline-flex; width: 24px; height: 24px; }
+.manager-host-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.manager-host-name svg { flex-shrink: 0; }
+.manager-host-name strong { font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.manager-star { padding: 3px; display: inline-flex; color: var(--muted); vertical-align: middle; }
+.manager-star.favorite { color: var(--amber); }
+.host-manager-menu { position: fixed; right: auto; bottom: auto; z-index: 130; width: 220px; max-height: calc(100vh - 12px); overflow: auto; }
+.manager-column-option { display: flex; align-items: center; gap: 8px; padding: 7px; font-size: 11px; color: var(--secondary); }
+.manager-column-option:hover { background: var(--hover); }

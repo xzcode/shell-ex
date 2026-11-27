@@ -808,5 +808,14 @@ export const en: Readonly<Record<string, string>> = {
   "没有匹配的进程": "No matching processes",
   "上一页": "Previous page",
   "下一页": "Next page",
-  "等待下一次有效 CPU 采样": "Waiting for the next valid CPU sample"
+  "等待下一次有效 CPU 采样": "Waiting for the next valid CPU sample",
+  "连接管理": "Connection manager",
+  "全部连接": "All connections",
+  "最后连接时间": "Last connected",
+  "显示列": "Visible columns",
+  "全选连接": "Select all connections",
+  "共 {0} 个连接": "{0} connections",
+  "已选择 {0} 项": "{0} selected",
+  "删除选中的 {0} 个连接及其保存的凭据？": "Delete the {0} selected connections and their saved credentials?",
+  "复制主机地址": "Copy host address"
 };

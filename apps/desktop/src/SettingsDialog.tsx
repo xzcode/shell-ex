@@ -23,6 +23,7 @@ import {
 } from "./api";
 import { Busy, ErrorBox, Field, Modal, Toggle } from "./ui";
 import { VaultDialog, type VaultStatus } from "./VaultDialog";
+import type { HostManagerDataAction } from "./HostManager";
 export function SettingsDialog({
   settings,
   onSave,
@@ -30,6 +31,7 @@ export function SettingsDialog({
   notify,
   onHostsChanged,
   hosts,
+  initialDataAction,
 }: {
   settings: AppSettings;
   onSave: (s: AppSettings) => Promise<void>;
@@ -37,23 +39,24 @@ export function SettingsDialog({
   notify: Notify;
   onHostsChanged: () => void;
   hosts: Host[];
+  initialDataAction?: HostManagerDataAction;
 }) {
   const [form, setForm] = useState({ ...settings });
   const [language, setLanguage] = useState<LanguagePreference>(getLanguagePreference);
-  const [tab, setTab] = useState("appearance");
+  const [tab, setTab] = useState(initialDataAction ? "data" : "appearance");
   const contentRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (contentRef.current) contentRef.current.scrollTop = 0;
   }, [tab]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [backup, setBackup] = useState<"export" | "import" | null>(null);
+  const [backup, setBackup] = useState<"export" | "import" | null>(initialDataAction === "export" || initialDataAction === "import" ? initialDataAction : null);
   const [passphrase, setPassphrase] = useState("");
   const [vaultStatus, setVaultStatus] = useState<VaultStatus | null>(null);
   const [vaultDialog, setVaultDialog] = useState<"access" | "change" | null>(null);
   const [includeCredentials, setIncludeCredentials] = useState(false);
   const [importText, setImportText] = useState("");
-  const [importing, setImporting] = useState(false);
+  const [importing, setImporting] = useState(initialDataAction === "ssh");
   const [preview, setPreview] = useState<{
     hosts: Host[];
     warnings: string[];
@@ -78,7 +81,7 @@ export function SettingsDialog({
         .catch((e) =>
           setUpdate({
             configured: false,
-            version: "0.4.14",
+            version: "0.4.16",
             reason: errorText(e),
           }),
         );
@@ -169,7 +172,7 @@ export function SettingsDialog({
       footer={
         <>
           <span className="footer-note">
-            Shell EX · {update?.version || "0.4.14"}
+            Shell EX · {update?.version || "0.4.16"}
           </span>
           <button className="button secondary" onClick={onClose}>{tr("取消")}</button>
           <button
@@ -483,7 +486,7 @@ export function SettingsDialog({
               <div className="brand-mark large">›_</div>
               <h2>Shell EX</h2>
               <p>{tr("你的服务器，你的工作台。")}</p>
-              <span className="version">v{update?.version || "0.4.14"}</span>
+              <span className="version">v{update?.version || "0.4.16"}</span>
               <div className="settings-list">
                 <div>
                   <span>{tr("运行环境")}</span>
